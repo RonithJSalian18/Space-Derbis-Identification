@@ -1,25 +1,87 @@
+# ==========================================
+# SPACE DEBRIS DETECTION PROJECT
+# FULL DATASET CV PIPELINE
+# ==========================================
+
+
+# ==============================
+# 1. Mount Google Drive
+# ==============================
+
+# from google.colab import drive
+# drive.mount('/content/drive')
+
+
+# ==============================
+# 2. Extract Dataset ZIP
+# ==============================
+
+import zipfile
+import os
+
+dataset_zip = "/content/drive/MyDrive/space_debris_project/dataset.zip"
+extract_path = "/content/dataset"
+
+with zipfile.ZipFile(dataset_zip, 'r') as zip_ref:
+    zip_ref.extractall(extract_path)
+
+print("Dataset Extracted Successfully")
+
+
+# ==============================
+# 3. Import Libraries
+# ==============================
 
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 from skimage.feature import hog
-import os
-import time
+
+
+# ==============================
+# 4. Dataset Paths
+# ==============================
+
+DATASET_PATH = "/content/dataset"
+
+PROCESSED_PATH = "/content/processed_dataset"
+
+os.makedirs(PROCESSED_PATH, exist_ok=True)
+os.makedirs(PROCESSED_PATH + "/debris", exist_ok=True)
+os.makedirs(PROCESSED_PATH + "/non_debris", exist_ok=True)
+
+
+# ==============================
+# 5. CV Preprocessing Function
+# ==============================
 
 def preprocess_image(image):
+
     # Resize
     resized = cv2.resize(image,(128,128))
+
     # Grayscale
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+
     # Noise Removal (Gaussian Blur)
     denoised = cv2.GaussianBlur(gray,(3,3),0)
+
     # Image Enhancement (CLAHE)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     enhanced = clahe.apply(denoised)
+
     # Edge Detection
     edges = cv2.Canny(enhanced,50,150)
+
     return resized, gray, denoised, enhanced, edges
 
+
+# ==============================
+# 6. Feature Extraction (HOG)
+# ==============================
+
 def extract_features(image):
+
     features = hog(
         image,
         orientations=9,
@@ -27,69 +89,122 @@ def extract_features(image):
         cells_per_block=(2,2),
         visualize=False
     )
+
     return features
 
-def process_dataset(DATASET_PATH, PROCESSED_PATH, MAX_SAMPLE_IMAGES=None):
-    data = []
-    labels = []
-    categories = ["debris","non_debris"]
 
-    start_time = time.time()
-    images_processed_count = 0
+# ==============================
+# 7. Test CV Pipeline on One Image
+# ==============================
 
-    for category in categories:
-        path = os.path.join(DATASET_PATH, category)
-        save_folder = os.path.join(PROCESSED_PATH, category)
-        label = categories.index(category)
+sample_path = "/content/dataset/debris/" + os.listdir("/content/dataset/debris")[0]
 
-        print(f"\nProcessing: {category}")
+image = cv2.imread(sample_path)
 
-        for img_name in os.listdir(path):
-            if MAX_SAMPLE_IMAGES is not None and images_processed_count >= MAX_SAMPLE_IMAGES:
-                break
+resized, gray, denoised, enhanced, edges = preprocess_image(image)
 
-            img_path = os.path.join(path, img_name)
+plt.figure(figsize=(15,5))
 
-            try:
-                image = cv2.imread(img_path)
-                if image is None:
-                    print(f"Warning: Could not load image {img_path}. Skipping.")
-                    continue
+plt.subplot(1,5,1)
+plt.title("Original")
+plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+plt.axis("off")
 
-                resized, gray, denoised, enhanced, edges = preprocess_image(image)
+plt.subplot(1,5,2)
+plt.title("Grayscale")
+plt.imshow(gray, cmap="gray")
+plt.axis("off")
 
-                os.makedirs(save_folder, exist_ok=True)
-                save_path = os.path.join(save_folder, img_name)
-                cv2.imwrite(save_path, edges)
+plt.subplot(1,5,3)
+plt.title("Noise Removed")
+plt.imshow(denoised, cmap="gray")
+plt.axis("off")
 
-                features = extract_features(edges)
+plt.subplot(1,5,4)
+plt.title("Enhanced")
+plt.imshow(enhanced, cmap="gray")
+plt.axis("off")
 
-                data.append(features)
-                labels.append(label)
-                images_processed_count += 1
+plt.subplot(1,5,5)
+plt.title("Edges")
+plt.imshow(edges, cmap="gray")
+plt.axis("off")
 
-            except Exception as e:
-                print(f"Error processing {img_path}: {e}")
-                pass
-        if MAX_SAMPLE_IMAGES is not None and images_processed_count >= MAX_SAMPLE_IMAGES:
-            break
+plt.show()
 
-    end_time = time.time()
-    time_taken = end_time - start_time
 
-    print(f"\nProcessed {images_processed_count} sample images in {time_taken:.2f} seconds.")
+# ==============================
+# 8. Process Entire Dataset
+# ==============================
 
-    if images_processed_count > 0:
-        time_per_image = time_taken / images_processed_count
-        # Assuming total_images_to_process for full dataset estimation
-        total_images_to_process = 20000 + 40
-        estimated_total_time = time_per_image * total_images_to_process
+data = []
+labels = []
 
-        print(f"Estimated time per image: {time_per_image:.4f} seconds")
-        print(f"Estimated total time for {total_images_to_process} images: {estimated_total_time:.2f} seconds ({estimated_total_time/60:.2f} minutes, {estimated_total_time/3600:.2f} hours)")
-    else:
-        print("Could not process any images for estimation.")
+categories = ["debris","non_debris"]
 
-    print(f"\nTotal Images Processed (for sample): {len(data)}")
+for category in categories:
 
-    return np.array(data), np.array(labels)
+    path = os.path.join(DATASET_PATH,category)
+
+    save_folder = os.path.join(PROCESSED_PATH,category)
+
+    label = categories.index(category)
+
+    print("\nProcessing:", category)
+
+    for img in os.listdir(path):
+
+        img_path = os.path.join(path,img)
+
+        try:
+
+            image = cv2.imread(img_path)
+
+            resized, gray, denoised, enhanced, edges = preprocess_image(image)
+
+            # Save processed edge image
+            save_path = os.path.join(save_folder,img)
+            cv2.imwrite(save_path,edges)
+
+            # Extract HOG features
+            features = extract_features(edges)
+
+            data.append(features)
+            labels.append(label)
+
+        except:
+            pass
+
+
+print("\nTotal Images Processed:",len(data))
+
+
+# ==============================
+# 9. Convert Dataset to NumPy
+# ==============================
+
+X = np.array(data)
+y = np.array(labels)
+
+print("\nDataset Converted to NumPy")
+
+print("Feature Matrix Shape:",X.shape)
+print("Label Vector Shape:",y.shape)
+
+
+# ==============================
+# 10. Show Sample Feature Values
+# ==============================
+
+active_indices = np.where(X[0] > 0)[0]
+
+if len(active_indices) > 0:
+
+    start = active_indices[0]
+
+    print("\nSample Feature Values:")
+    print(X[0][start:start+20])
+
+else:
+
+    print("\nWarning: All features are zero. Check preprocessing.")
