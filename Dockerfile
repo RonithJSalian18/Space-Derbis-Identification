@@ -22,4 +22,4 @@ RUN pip install \
 EXPOSE 5000
 
 # Run script
-CMD ["python", "CNN/cnn.py"]
+CMD ["python", "cnn.py"]
