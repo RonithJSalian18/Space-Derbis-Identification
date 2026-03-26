@@ -14,7 +14,6 @@ Platform: Google Colab
 Date: 2024
 """
 
-!pip install tensorflow opencv-python scikit-learn seaborn matplotlib
 
 # ============================================================================
 # IMPORTS

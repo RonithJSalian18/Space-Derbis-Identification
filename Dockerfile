@@ -1,30 +1,25 @@
-# Use lightweight Python image
-FROM python:3.10-slim
+# Use NVIDIA CUDA base image with Python
+FROM tensorflow/tensorflow:2.15.0-gpu
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (required for OpenCV)
-RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy project files
 COPY . /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    tensorflow \
+# Upgrade pip
+RUN pip install --upgrade pip
+
+# Install required packages
+RUN pip install \
     opencv-python \
-    scikit-learn \
+    matplotlib \
     seaborn \
-    matplotlib
+    scikit-learn \
+    tqdm
 
-# Expose port (optional, useful if you later add API)
-EXPOSE 8000
+# Expose port (optional if you later add Flask)
+EXPOSE 5000
 
-# Default command
-CMD ["python", "CNN/main.py"]
+# Run script
+CMD ["python", "CNN/cnn.py"]
