@@ -7,18 +7,27 @@ WORKDIR /app
 # Copy project files
 COPY . /app
 
+# Install system dependencies (FIX for libxcb error)
+RUN apt-get update && apt-get install -y \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install required packages
+# Install required packages (use headless OpenCV)
 RUN pip install \
-    opencv-python \
+    opencv-python-headless \
     matplotlib \
     seaborn \
     scikit-learn \
     tqdm
 
-# Expose port (optional if you later add Flask)
+# Expose port (optional)
 EXPOSE 5000
 
 # Run script
