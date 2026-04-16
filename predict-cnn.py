@@ -5,7 +5,7 @@ import tensorflow as tf
 # ============================================================================
 # LOAD MODEL
 # ============================================================================
-model = tf.keras.models.load_model("D:\Space-Debris-vs\Space-models\debris_model(88).h5")
+model = tf.keras.models.load_model("D:\Space-Debris-vs\Space-models\mobile\mobilenet_debris(98).h5")
 print("✅ Model loaded!")
 
 # ============================================================================
