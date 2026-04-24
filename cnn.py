@@ -6,32 +6,31 @@ import os, zipfile, cv2, warnings
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import Image
+import imagehash  # pip install ImageHash
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc, precision_recall_curve
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, precision_recall_curve
 from sklearn.utils import shuffle
 
-from tensorflow.keras import layers, Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras import layers, Sequential, regularizers
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 warnings.filterwarnings('ignore')
-
-print("TensorFlow:", tf.__version__)
 
 # ============================================================================
 # GPU CHECK
 # ============================================================================
 print("\n🔍 Checking GPU...")
 gpus = tf.config.list_physical_devices('GPU')
-
 if gpus:
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
-    print(f"✅ GPU detected: {len(gpus)}")
+    print("✅ GPU ON")
 else:
-    print("⚠️ No GPU found. Running on CPU")
+    print("⚠️ CPU MODE")
 
 # ============================================================================
 # EXTRACT DATASET
@@ -56,16 +55,12 @@ def preprocess_image(path):
     return np.expand_dims(img, axis=-1)
 
 # ============================================================================
-# LOAD DATASET (🔥 FIXED AUTO DETECT)
+# LOAD DATASET
 # ============================================================================
 def load_dataset(base_path='dataset'):
-    X, y = [], []
+    X, y, paths = [], [], []
 
-    print("🔍 Searching dataset...")
-
-    # Auto-detect correct folder
     data_path = None
-
     for root, dirs, _ in os.walk(base_path):
         if 'debris' in dirs and 'non_debris' in dirs:
             data_path = root
@@ -73,7 +68,7 @@ def load_dataset(base_path='dataset'):
 
     if data_path is None:
         print("❌ Dataset not found!")
-        return np.array([]), np.array([])
+        return [], [], []
 
     print("✅ Using:", data_path)
 
@@ -82,36 +77,55 @@ def load_dataset(base_path='dataset'):
     for cls, label in classes.items():
         folder = os.path.join(data_path, cls)
 
-        files = os.listdir(folder)
-        print(f"{cls}: {len(files)} images")
-
-        for f in files:
-            img = preprocess_image(os.path.join(folder,f))
+        for f in os.listdir(folder):
+            p = os.path.join(folder, f)
+            img = preprocess_image(p)
             if img is not None:
                 X.append(img)
                 y.append(label)
+                paths.append(p)
 
-    return np.array(X), np.array(y)
+    return np.array(X), np.array(y), np.array(paths)
 
 # ============================================================================
-# REMOVE DUPLICATES (🔥 IMPORTANT)
+# REMOVE SIMILAR IMAGES
 # ============================================================================
-def remove_duplicates(X, y):
-    print("\n🧹 Removing duplicates...")
+def remove_similar_images(paths, threshold=2):
+    print("\n🧹 Removing similar images...")
 
-    seen = set()
-    X_clean, y_clean = [], []
+    hashes = []
+    keep_idx = []
 
-    for img, label in zip(X, y):
-        h = hash(img.tobytes())
-        if h not in seen:
-            seen.add(h)
-            X_clean.append(img)
-            y_clean.append(label)
+    for i, p in enumerate(paths):
+        try:
+            img = Image.open(p)
+            h = imagehash.phash(img)
 
-    print(f"Before: {len(X)} | After: {len(X_clean)}")
+            duplicate = False
+            for existing in hashes:
+                if abs(h - existing) <= threshold:
+                    duplicate = True
+                    break
 
-    return np.array(X_clean), np.array(y_clean)
+            if not duplicate:
+                hashes.append(h)
+                keep_idx.append(i)
+        except:
+            continue
+
+    print(f"Before: {len(paths)} | After: {len(keep_idx)}")
+    return keep_idx
+
+# ============================================================================
+# GROUPS (FOR LEAKAGE PREVENTION)
+# ============================================================================
+def create_groups(paths):
+    groups = []
+    for p in paths:
+        name = os.path.basename(p)
+        group_id = name.split('_')[0]
+        groups.append(group_id)
+    return np.array(groups)
 
 # ============================================================================
 # MODEL
@@ -120,62 +134,73 @@ def build_model():
     model = Sequential([
         layers.Input(shape=(128,128,1)),
 
-        Conv2D(32,3,activation='relu'), BatchNormalization(), MaxPooling2D(),
-        Conv2D(64,3,activation='relu'), BatchNormalization(), MaxPooling2D(),
-        Conv2D(128,3,activation='relu'), BatchNormalization(), MaxPooling2D(),
+        Conv2D(32,3,activation='relu'),
+        MaxPooling2D(),
+
+        Conv2D(64,3,activation='relu'),
+        MaxPooling2D(),
 
         Flatten(),
-        Dense(128, activation='relu'),
-        Dropout(0.5),
+
+        Dense(64, activation='relu',
+              kernel_regularizer=regularizers.l2(0.001)),
+
+        Dropout(0.6),
 
         Dense(1, activation='sigmoid')
     ])
 
-    model.compile(optimizer=Adam(0.0001),
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
+    model.compile(
+        optimizer=Adam(1e-4),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
+    )
     return model
 
 # ============================================================================
-# PLOTS
+# TRAINING PLOTS
 # ============================================================================
 def plot_training(history):
+    plt.style.use('seaborn-v0_8')
+
+    acc = history.history['accuracy']
+    val_acc = history.history['val_accuracy']
+
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+
+    epochs = range(1, len(acc)+1)
+
     plt.figure(figsize=(12,5))
 
+    # Accuracy
     plt.subplot(1,2,1)
-    plt.plot(history.history['accuracy'], label='Train')
-    plt.plot(history.history['val_accuracy'], label='Val')
-    plt.title("Accuracy vs Epoch")
+    plt.plot(epochs, acc, label='Train Accuracy')
+    plt.plot(epochs, val_acc, label='Validation Accuracy')
+    plt.title('Accuracy vs Epoch')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
     plt.legend()
 
+    # Loss
     plt.subplot(1,2,2)
-    plt.plot(history.history['loss'], label='Train')
-    plt.plot(history.history['val_loss'], label='Val')
-    plt.title("Loss vs Epoch")
+    plt.plot(epochs, loss, label='Train Loss')
+    plt.plot(epochs, val_loss, label='Validation Loss')
+    plt.title('Loss vs Epoch')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
     plt.legend()
 
+    plt.tight_layout()
+    plt.savefig("training_graph.png", dpi=300)
     plt.show()
 
-def plot_confusion(y_test, y_pred):
-    cm = confusion_matrix(y_test, y_pred)
-    sns.heatmap(cm, annot=True, fmt='d',
-                xticklabels=['Debris','Non-Debris'],
-                yticklabels=['Debris','Non-Debris'])
-    plt.title("Confusion Matrix")
-    plt.show()
-
-def plot_roc(y_test, y_prob):
-    fpr, tpr, _ = roc_curve(y_test, y_prob)
-    plt.plot(fpr, tpr)
-    plt.plot([0,1],[0,1],'--')
-    plt.title("ROC Curve")
-    plt.show()
-
-def plot_pr(y_test, y_prob):
-    precision, recall, _ = precision_recall_curve(y_test, y_prob)
-    plt.plot(recall, precision)
-    plt.title("Precision-Recall")
-    plt.show()
+# ============================================================================
+# OVERLAP CHECK
+# ============================================================================
+def check_overlap(train_paths, test_paths):
+    overlap = set(train_paths).intersection(set(test_paths))
+    print("\n🔍 Overlap between train & test:", len(overlap))
 
 # ============================================================================
 # MAIN
@@ -185,60 +210,98 @@ def main():
     extract_dataset()
 
     print("\n📥 Loading...")
-    X, y = load_dataset()
+    X, y, paths = load_dataset()
 
     if len(X) == 0:
         return
 
-    # Shuffle
-    X, y = shuffle(X, y, random_state=42)
+    # Remove similar images
+    keep_idx = remove_similar_images(paths, threshold=2)
+    X, y, paths = X[keep_idx], y[keep_idx], paths[keep_idx]
 
-    # 🔥 REMOVE DUPLICATES
-    X, y = remove_duplicates(X, y)
+    X, y, paths = shuffle(X, y, paths, random_state=42)
 
-    # Split
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X, y, test_size=0.3, stratify=y, random_state=42)
+    # Group split
+    groups = create_groups(paths)
 
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42)
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
+    train_idx, temp_idx = next(gss.split(X, y, groups))
+
+    X_train, X_temp = X[train_idx], X[temp_idx]
+    y_train, y_temp = y[train_idx], y[temp_idx]
+    paths_train, paths_temp = paths[train_idx], paths[temp_idx]
+
+    groups_temp = groups[temp_idx]
+
+    gss2 = GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=42)
+    val_idx, test_idx = next(gss2.split(X_temp, y_temp, groups_temp))
+
+    X_val, X_test = X_temp[val_idx], X_temp[test_idx]
+    y_val, y_test = y_temp[val_idx], y_temp[test_idx]
+    paths_val, paths_test = paths_temp[val_idx], paths_temp[test_idx]
+
+    print("\n📊 Dataset Split:")
+    print("Train:", len(X_train))
+    print("Val:", len(X_val))
+    print("Test:", len(X_test))
+
+    check_overlap(paths_train, paths_test)
 
     # Augmentation
     datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-        rotation_range=15,
-        zoom_range=0.1,
+        rotation_range=20,
+        zoom_range=0.2,
         horizontal_flip=True
     )
-    datagen.fit(X_train)
 
     model = build_model()
 
+    # Train
     history = model.fit(
         datagen.flow(X_train, y_train, batch_size=32),
         validation_data=(X_val, y_val),
-        epochs=25,
+        epochs=30,
         callbacks=[
-            EarlyStopping(patience=5, restore_best_weights=True),
-            ReduceLROnPlateau(patience=3)
+            EarlyStopping(patience=7, restore_best_weights=True),
+            ReduceLROnPlateau(patience=4)
         ]
     )
 
+    # 🔥 PLOT TRAINING GRAPHS
     plot_training(history)
 
+    # Evaluate
     loss, acc = model.evaluate(X_test, y_test)
-    print("Test Accuracy:", acc)
+    print("\n✅ Test Accuracy:", acc)
 
-    # 🔥 FIXED PREDICTION
     y_prob = model.predict(X_test)
     y_pred = (y_prob > 0.5).astype(int)
 
+    print("\n📋 Classification Report:")
     print(classification_report(y_test, y_pred))
 
-    plot_confusion(y_test, y_pred)
-    plot_roc(y_test, y_prob)
-    plot_pr(y_test, y_prob)
+    # Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d',
+                xticklabels=['Debris','Non-Debris'],
+                yticklabels=['Debris','Non-Debris'])
+    plt.title("Confusion Matrix")
+    plt.show()
 
-    model.save("debris_model_final.h5")
+    # ROC
+    fpr, tpr, _ = roc_curve(y_test, y_prob)
+    plt.plot(fpr, tpr)
+    plt.plot([0,1],[0,1],'--')
+    plt.title("ROC Curve")
+    plt.show()
+
+    # PR Curve
+    precision, recall, _ = precision_recall_curve(y_test, y_prob)
+    plt.plot(recall, precision)
+    plt.title("Precision-Recall Curve")
+    plt.show()
+
+    model.save("final_debris_model_fixed.h5")
     print("✅ Model saved")
 
 # ============================================================================
