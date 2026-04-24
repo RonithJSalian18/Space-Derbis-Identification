@@ -1,3 +1,4 @@
-tf-gpu-env/
+debris-gpu-env/
 dataset.zip
 dataset/
+gitignore
