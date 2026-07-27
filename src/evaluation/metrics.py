@@ -6,7 +6,7 @@ from sklearn.metrics import classification_report, confusion_matrix, roc_curve, 
 from configs import CLASS_NAMES
 
 
-def plot_learning_curves(history, save_dir="plots"):
+def plot_learning_curves(history, save_dir="plots", show_plot=True):
     """
     Plots and saves training and validation curves for Loss, Accuracy, Precision, and Recall.
     """
@@ -66,19 +66,26 @@ def plot_learning_curves(history, save_dir="plots"):
         axes[1, 1].grid(True, linestyle='--', alpha=0.6)
 
     plt.tight_layout()
-    curve_path = os.path.join(save_dir, 'learning_curves.png')
+    curve_path = os.path.abspath(os.path.join(save_dir, 'learning_curves.png'))
     plt.savefig(curve_path, dpi=300)
+
+    if show_plot and hasattr(plt.get_current_fig_manager(), 'show'):
+        try:
+            plt.show(block=False)
+        except Exception:
+            pass
+
     plt.close()
-    print(f"📊 Learning curves plot saved to: {curve_path}")
+    print(f"[+] Learning curves plot saved to: {curve_path}")
 
 
-def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="plots"):
+def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="plots", show_plot=True):
     """
-    Comprehensive evaluation pipeline: Prints metrics and saves visualization plots.
+    Comprehensive evaluation pipeline: Prints metrics, saves plots, and displays visualizations.
     """
     os.makedirs(save_dir, exist_ok=True)
     print("\n==================================================")
-    print("📊 EVALUATION RESULTS ON TEST SET")
+    print("[+] EVALUATION RESULTS ON TEST SET")
     print("==================================================")
 
     # Predictions
@@ -98,7 +105,7 @@ def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.tight_layout()
-    cm_path = os.path.join(save_dir, 'confusion_matrix.png')
+    cm_path = os.path.abspath(os.path.join(save_dir, 'confusion_matrix.png'))
     plt.savefig(cm_path, dpi=300)
     plt.close()
 
@@ -113,7 +120,7 @@ def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="
     plt.title('Receiver Operating Characteristic (ROC)')
     plt.legend(loc="lower right")
     plt.tight_layout()
-    roc_path = os.path.join(save_dir, 'roc_curve.png')
+    roc_path = os.path.abspath(os.path.join(save_dir, 'roc_curve.png'))
     plt.savefig(roc_path, dpi=300)
     plt.close()
 
@@ -127,11 +134,15 @@ def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="
     plt.title('Precision-Recall Curve')
     plt.legend(loc="lower left")
     plt.tight_layout()
-    pr_path = os.path.join(save_dir, 'precision_recall_curve.png')
+    pr_path = os.path.abspath(os.path.join(save_dir, 'precision_recall_curve.png'))
     plt.savefig(pr_path, dpi=300)
     plt.close()
 
-    print(f"📈 Evaluation plots saved to directory: '{save_dir}'")
+    print(f"\n[+] Evaluation plots successfully generated and saved to: {os.path.abspath(save_dir)}")
+    print(f"   |-- Confusion Matrix:       {cm_path}")
+    print(f"   |-- ROC Curve:              {roc_path}")
+    print(f"   +-- Precision-Recall Curve: {pr_path}")
+
     return {
         "report": report,
         "confusion_matrix": cm,

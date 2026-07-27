@@ -25,7 +25,7 @@ def main():
     res = predictor.predict(image_path=args.image)
 
     print("\n==================================================")
-    print("📸 INFERENCE RESULT")
+    print("[+] INFERENCE RESULT")
     print("==================================================")
     print(f"File Path:       {res.get('image_path')}")
     print(f"Prediction:      {res.get('prediction')}")

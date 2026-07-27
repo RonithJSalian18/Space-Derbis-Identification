@@ -11,10 +11,10 @@ def setup_gpu():
         try:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            print(f"✅ GPU activated: Detected {len(gpus)} GPU device(s). Memory growth enabled.")
+            print(f"[+] GPU activated: Detected {len(gpus)} GPU device(s). Memory growth enabled.")
             for i, gpu in enumerate(gpus):
-                print(f"   └── GPU [{i}]: {gpu.name}")
+                print(f"   |-- GPU [{i}]: {gpu.name}")
         except RuntimeError as e:
-            print(f"⚠️ GPU configuration notice: {e}")
+            print(f"[-] GPU configuration notice: {e}")
     else:
-        print("⚠️ No GPU detected by TensorFlow. Running on CPU mode.")
+        print("[-] No GPU detected by TensorFlow. Running on CPU mode.")

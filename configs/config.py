@@ -16,11 +16,11 @@ CLASS_MAPPING = {
 }
 CLASS_NAMES = ["Debris", "Non-Debris"]
 
-# Default Hyperparameters (Optimized for 224x224 Space Debris Images)
+# Default Hyperparameters (Optimized for Stability & Balance)
 IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 EPOCHS = 30
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 0.0001
 LABEL_SMOOTHING = 0.1
 SEED = 42
 
