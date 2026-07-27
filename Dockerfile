@@ -1,25 +1,24 @@
-# Use NVIDIA CUDA base image with Python
+# Use official TensorFlow GPU container image
 FROM tensorflow/tensorflow:2.15.0-gpu
 
 # Set working directory
 WORKDIR /app
 
-# Copy project files
+# Install system dependencies (e.g. libgl1 for OpenCV)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python packages
+COPY requirements.txt /app/
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+# Copy source code and files
 COPY . /app
 
-# Upgrade pip
-RUN pip install --upgrade pip
+# Set environment variables
+ENV PYTHONPATH=/app
 
-# 🔥 Install only Python dependencies (NO apt-get needed)
-RUN pip install \
-    opencv-python-headless \
-    matplotlib \
-    seaborn \
-    scikit-learn \
-    tqdm
-
-# Expose port (optional)
-EXPOSE 5000
-
-# Run script
-CMD ["python", "cnn.py"]
+# Default command runs the unified training pipeline for CNN
+CMD ["python", "train.py", "--model", "cnn"]

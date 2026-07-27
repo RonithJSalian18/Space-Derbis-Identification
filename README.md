@@ -1,190 +1,170 @@
-# 🚀 Space Debris Detection using CNN
+# 🛰️ Space Debris Identification System
 
-A deep learning project that classifies images as **Space Debris** or **Non-Debris** using a Convolutional Neural Network (CNN) built with TensorFlow and OpenCV.
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![TensorFlow](https://img.shields.io/badge/TensorFlow-2.10%2B-FF6F00.svg)](https://www.tensorflow.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-green.svg)](https://opencv.org/)
+[![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
----
-
-## 📌 Project Overview
-
-This project uses computer vision and deep learning to automatically detect space debris from images. It includes:
-
-- Image preprocessing (grayscale + normalization)
-- CNN model for binary classification
-- Data augmentation for generalization
-- Train / Validation / Test split (70/15/15)
-- Model evaluation with real metrics
-- Prediction system for new images
+A production-grade Deep Learning & Computer Vision system designed to classify orbital imagery into **Space Debris** vs. **Non-Debris (Active Satellites & Spacecraft)**. Built with TensorFlow/Keras and OpenCV, featuring dynamic GPU memory management, automated image deduplication, zero-g spatial augmentations, and modular model backbones.
 
 ---
 
-## 🧠 Model Architecture
+## 📌 Problem Statement & Vision
 
-- Conv2D → BatchNormalization → MaxPooling
-- Conv2D → BatchNormalization → MaxPooling
-- Conv2D → BatchNormalization → MaxPooling
-- Flatten → Dense(128) → Dropout(0.6)
-- Output Layer (Sigmoid)
+Space debris poses a critical threat to orbital infrastructure and satellite constellations. Automated detection requires models that:
 
----
-
-## 📂 Dataset Structure
-
-```id="ds2"
-dataset/
-│
-├── debris/
-│   ├── img1.jpg
-│   ├── img2.jpg
-│   └── ...
-│
-└── non_debris/
-    ├── img1.jpg
-    ├── img2.jpg
-    └── ...
-```
-
-- 📦 Size: ~1.5GB
-- 🖼️ Images: ~10,000
-- 🏷️ Classes:
-  - `debris` → 0
-  - `non_debris` → 1
+1. **Preserve Fine Geometric Features:** Detect small orbital fragment textures alongside structured metallic solar panels at $224\times224$ resolution.
+2. **Prevent Overfitting:** Utilize **Global Average Pooling**, L2 Regularization, and **Label Smoothing** to avoid memorizing black space background artifacts.
+3. **Handle Zero-Gravity Spatial Variance:** Apply 180° rotation invariance and multi-axis flips to account for arbitrary orbital orientations.
 
 ---
 
-## ⚙️ Environment Setup
+## 📂 Project Architecture
 
-### 1. Create Virtual Environment
-
-```bash id="env11"
-python -m venv tf-gpu-env
-```
-
-### 2. Activate Environment
-
-#### Windows:
-
-```bash id="env22"
-tf-gpu-env\Scripts\activate
-```
-
-#### Linux/Mac:
-
-```bash id="env33"
-source tf-gpu-env/bin/activate
+```text
+Space-Debris-Identification/
+├── configs/                  # Global hyperparameter settings & path configuration
+│   ├── __init__.py
+│   └── config.py
+├── saved_models/             # Export directory for trained model artifacts (.h5)
+├── plots/                    # Automated evaluation plots (Confusion matrix, ROC, Learning curves)
+├── src/                      # Core Modular Package
+│   ├── data/                 # Dataset loader, cleaning (MD5/pHash), and preprocessing
+│   │   ├── loader.py
+│   │   └── preprocessing.py
+│   ├── models/               # Model Factory & Architecture Definitions
+│   │   ├── builder.py        # Dynamic Model Factory
+│   │   ├── cnn.py            # Custom 4-stage CNN with Global Average Pooling
+│   │   ├── mobilenet.py      # MobileNetV2 Transfer Learning
+│   │   ├── resnet.py         # ResNet50 Transfer Learning
+│   │   └── efficientnet.py   # EfficientNetB0 Transfer Learning
+│   ├── evaluation/           # Evaluation metrics & learning curve visualization
+│   │   └── metrics.py
+│   ├── inference/            # Prediction engine
+│   │   └── predictor.py
+│   └── utils/                # GPU detection & memory growth setup
+│       └── gpu.py
+├── train.py                  # Unified CLI entrypoint for model training
+├── predict.py                # Unified CLI entrypoint for single/batch inference
+├── Dockerfile                # Production Docker container configuration
+├── requirements.txt          # Python dependencies
+└── README.md                 # Project documentation
 ```
 
 ---
 
-### 3. Install Dependencies
+## 🧠 Supported Model Architectures
 
-```bash id="env44"
-pip install tensorflow==2.10.1 numpy<2 opencv-python matplotlib scikit-learn
+| Model Name         | Type              | Key Characteristics                              | Recommended Use Case                         |
+| :----------------- | :---------------- | :----------------------------------------------- | :------------------------------------------- |
+| **Custom CNN**     | Custom Deep CNN   | 4-Stage Conv2D + Global Average Pooling + L2 Reg | Fast training, lightweight, zero overfitting |
+| **MobileNetV2**    | Transfer Learning | Pretrained ImageNet backbone + Native scaling    | Edge deployment / Real-time inference        |
+| **ResNet50**       | Transfer Learning | Residual connections + Deep feature extraction   | High complexity pattern recognition          |
+| **EfficientNetB0** | Transfer Learning | Compound scaling architecture                    | Maximum accuracy-to-parameter efficiency     |
+
+---
+
+## ⚙️ Data Quality & Preprocessing Pipeline
+
+- **Image Corruption Pruning:** Scans image headers and removes unreadable or degraded image files.
+- **Perceptual Hashing (pHash):** Uses `imagehash.phash()` to prune visually identical frames, preventing data leakage between train/validation/test splits.
+- **Space-Domain Augmentation:**
+  - `rotation_range = 180` (Full 180° rotation invariance)
+  - `horizontal_flip` & `vertical_flip` (Zero-g spatial invariance)
+  - `brightness_range = [0.7, 1.3]` (Orbital solar lighting variations)
+- **Label Smoothing Regularization:** Applies `BinaryCrossentropy(label_smoothing=0.1)` to prevent overconfident target memorization.
+
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Environment Setup
+
+```bash
+# Clone repository
+git clone https://github.com/RonithJSalian18/Space-Derbis-Identification.git
+cd Space-Derbis-Identification
+
+# Create virtual environment
+python -m venv venv
+
+# Activate environment
+# On Windows:
+.\venv\Scripts\activate
+# On Linux/Mac:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
 ---
 
-## 🖥️ GPU Setup (Optional)
+### 2. Model Training
 
-Ensure:
+Train any supported model architecture via `train.py`:
 
-- NVIDIA GPU
-- CUDA + cuDNN installed
+```bash
+# Train Custom CNN (Default, 224x224 resolution)
+python train.py --model cnn --epochs 30 --batch-size 16
 
-Check GPU:
+# Train MobileNetV2 Transfer Learning
+python train.py --model mobilenet --epochs 20
 
-```python id="gpu2"
-import tensorflow as tf
-print(tf.config.list_physical_devices('GPU'))
+# Train ResNet50 Transfer Learning
+python train.py --model resnet --epochs 20
+
+# Train EfficientNetB0
+python train.py --model efficientnet --epochs 20
+```
+
+> **Artifact Outputs:** Best model weights are automatically saved to `saved_models/<model_name>_debris.h5`.
+
+---
+
+### 3. Running Predictions / Inference
+
+Classify a single space image using `predict.py`:
+
+```bash
+python predict.py --image "path/to/space_image.jpg" --model "saved_models/cnn_debris.h5" --type cnn
+```
+
+**Sample Output:**
+
+```text
+==================================================
+📸 INFERENCE RESULT
+==================================================
+File Path:       path/to/space_image.jpg
+Prediction:      Debris
+Confidence:      98.64%
+Debris Prob:     0.9864
+Non-Debris Prob: 0.0136
+==================================================
 ```
 
 ---
 
-## ▶️ How to Run
+## 📊 Evaluation & Visualization Outputs
 
-### Step 1: Add Dataset ZIP
+After training, metrics and charts are automatically saved in `plots/<model_name>/`:
 
-```id="run11"
-dataset.zip
+- `learning_curves.png`: 4-Panel Loss, Accuracy, Precision, and Recall history curves.
+- `confusion_matrix.png`: Heatmap showing true vs. predicted classifications.
+- `roc_curve.png`: Receiver Operating Characteristic curve with AUC score.
+- `precision_recall_curve.png`: Precision-Recall curve highlighting debris safety recall.
+
+---
+
+## 🐳 Docker Deployment
+
+```bash
+# Build Docker image
+docker build -t space-debris-detector .
+
+# Run GPU-accelerated container
+docker run --gpus all space-debris-detector
 ```
-
-### Step 2: Run Script
-
-```bash id="run22"
-python cnn.py
-```
-
----
-
-## 🔄 Pipeline
-
-1. Extract dataset
-2. Load & preprocess images
-3. Shuffle dataset
-4. Split into train / validation / test
-5. Apply data augmentation
-6. Train CNN
-7. Evaluate on test set
-8. Save model
-
----
-
-## 📊 Final Results
-
-```id="res11"
-Accuracy: 88%
-
-Class-wise Performance:
-
-Debris:
-Precision: 0.81
-Recall:    1.00
-F1-score:  0.89
-
-Non-Debris:
-Precision: 1.00
-Recall:    0.76
-F1-score:  0.86
-```
-
----
-
-## 🧠 Model Interpretation
-
-- Detects all debris (Recall = 1.00)
-- Occasionally misclassifies non-debris as debris
-- Designed to prioritize safety (high recall)
-
----
-
-## 🔍 Prediction Code
-
-```python id="pred11"
-from tensorflow.keras.models import load_model
-import cv2, numpy as np
-
-model = load_model("debris_model.h5")
-
-def predict(image_path):
-    img = cv2.imread(image_path)
-    img = cv2.resize(img, (128,128))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = img / 255.0
-    img = np.expand_dims(img, axis=(0,-1))
-
-    pred = model.predict(img)[0][0]
-
-    if pred > 0.5:
-        print("Non-Debris")
-    else:
-        print("Debris")
-```
-
----
-
-## 📁 Output Files
-
-- `debris_model.h5` → trained model
-- Training logs
-- Evaluation metrics
 
 ---
