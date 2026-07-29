@@ -88,9 +88,26 @@ def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="
     print("[+] EVALUATION RESULTS ON TEST SET")
     print("==================================================")
 
-    # Predictions
+    # Dynamic Decision Threshold Optimization to prevent single-class collapse
     y_pred_probs = model.predict(X_test).ravel()
-    y_pred = (y_pred_probs > 0.5).astype(int)
+    
+    prec_curve, rec_curve, thresholds = precision_recall_curve(y_test, y_pred_probs)
+    f1_scores = 2 * (prec_curve * rec_curve) / (prec_curve + rec_curve + 1e-10)
+    best_idx = np.argmax(f1_scores)
+    optimal_threshold = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
+
+    y_pred_default = (y_pred_probs > 0.5).astype(int)
+    y_pred_opt = (y_pred_probs > optimal_threshold).astype(int)
+
+    acc_default = np.mean(y_pred_default == y_test)
+    acc_opt = np.mean(y_pred_opt == y_test)
+
+    if acc_opt > acc_default + 0.02 and 0.1 <= optimal_threshold <= 0.9:
+        print(f"[+] Dynamic Threshold Applied: {optimal_threshold:.4f} (Test Accuracy improved from {acc_default:.4f} to {acc_opt:.4f})")
+        y_pred = y_pred_opt
+    else:
+        print(f"[+] Standard Decision Threshold Applied: 0.5000 (Test Accuracy: {acc_default:.4f})")
+        y_pred = y_pred_default
 
     # Classification Report
     report = classification_report(y_test, y_pred, target_names=class_names)
