@@ -1,0 +1,51 @@
+experiment_name: "space_debris_identification"
+seed: 42
+
+data:
+  dataset_zip_path: "dataset.zip"
+  extract_dir: "dataset"
+  image_size: [224, 224]
+  batch_size: 32
+  keep_duplicates: true
+  class_mapping:
+    debris: 0
+    non_debris: 1
+  class_names: ["Debris", "Non-Debris"]
+
+training:
+  epochs: 30
+  warmup_epochs: 5
+  lr_phase1: 0.001
+  lr_phase2: 0.0001
+  learning_rate: 0.0001
+  optimizer: "adam"
+  loss: "binary_crossentropy"
+  label_smoothing: 0.0
+  use_class_weights: true
+  clipnorm: 1.0
+
+checkpoint:
+  saved_models_dir: "saved_models"
+  log_dir: "plots/logs"
+
+models:
+  cnn:
+    color_mode: "grayscale"
+    learning_rate: 0.0001
+    l2_reg: 0.001
+    dropout_rate: 0.5
+  mobilenet:
+    color_mode: "rgb"
+    learning_rate: 0.0001
+    dropout_rate: 0.3
+    fine_tune_at: 30
+  resnet:
+    color_mode: "rgb"
+    learning_rate: 0.0001
+    dropout_rate: 0.3
+    fine_tune_at: 30
+  efficientnet:
+    color_mode: "rgb"
+    learning_rate: 0.0001
+    dropout_rate: 0.3
+    fine_tune_at: 30
