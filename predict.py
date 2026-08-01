@@ -6,6 +6,14 @@ Usage examples:
 """
 import argparse
 import os
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from src.utils import setup_gpu
 from src.inference import DebrisPredictor
 
@@ -13,7 +21,7 @@ from src.inference import DebrisPredictor
 def main():
     parser = argparse.ArgumentParser(description="Run Space Debris Identification Inference")
     parser.add_argument("--image", type=str, required=True, help="Path to input image file")
-    parser.add_argument("--model", type=str, default="saved_models/cnn_debris.h5", help="Path to trained .h5 model file")
+    parser.add_argument("--model", type=str, default="saved_models/cnn_spark_debris.h5", help="Path to trained .h5 model file")
     parser.add_argument("--type", type=str, default="cnn", choices=["cnn", "mobilenet", "resnet", "efficientnet"],
                         help="Model type (cnn or transfer learning model)")
 

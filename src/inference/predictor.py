@@ -1,7 +1,15 @@
 import os
+import sys
 import cv2
 import numpy as np
 import tensorflow as tf
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from src.data.preprocessing import preprocess_image
 from src.models import ModelFactory
 

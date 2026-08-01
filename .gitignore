@@ -1,3 +1,6 @@
+# ==========================================
+# Python & Bytecode
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,10 +21,11 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
+*.whl
+
+# ==========================================
+# Virtual Environments
+# ==========================================
 .venv/
 venv/
 env/
@@ -30,7 +34,19 @@ tf-gpu-env/
 debris-gpu-env/
 conda-env/
 .conda/
+env*/
+venv*/
+*env/
+
+# ==========================================
+# Datasets & Heavy Data Files
+# ==========================================
+SPARK-2022/
+SPARK-2022-Preprocessed/
+sample_debris/
+sample_non_debris/
 dataset/
+datasets/
 data/
 raw_data/
 dataset.zip
@@ -40,7 +56,28 @@ dataset.zip
 *.tgz
 *.rar
 *.7z
+
+# ==========================================
+# Data Caches & Binary Formats
+# ==========================================
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.parquet
+*.feather
+*.sqlite
+*.sqlite3
+*.db
+.cache/
+tmp/
+temp/
+
+# ==========================================
+# Models, Checkpoints & Weights
+# ==========================================
 saved_models/
+checkpoints/
 *.h5
 *.keras
 *.pb
@@ -51,16 +88,47 @@ saved_models/
 *.ckpt
 variables/
 assets/
-plots/
+
+# ==========================================
+# Logs, TensorBoard & Experiment Tracking
+# ==========================================
 logs/
 tensorboard/
+wandb/
+.wandb/
 *.log
-.ipynb_checkpoints/
+
+# ==========================================
+# Plots, Visualizations & Outputs
+# ==========================================
+plots/
+results/
+outputs/
+output/
+
+# ==========================================
+# Environment & Secrets
+# ==========================================
+.env
+.env.local
+.env.*
+
+# ==========================================
+# IDE & Editor Configurations
+# ==========================================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
+.ipynb_checkpoints/
+
+# ==========================================
+# OS & System Files
+# ==========================================
 .DS_Store
 Thumbs.db
 ehthumbs.db
