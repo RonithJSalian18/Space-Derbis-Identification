@@ -39,16 +39,16 @@ venv*/
 *env/
 
 # ==========================================
-# Datasets & Heavy Data Files
+# Datasets & Heavy Data Files (Root-level only)
 # ==========================================
-SPARK-2022/
-SPARK-2022-Preprocessed/
-sample_debris/
-sample_non_debris/
-dataset/
-datasets/
-data/
-raw_data/
+/SPARK-2022/
+/SPARK-2022-Preprocessed/
+/sample_debris/
+/sample_non_debris/
+/dataset/
+/datasets/
+/data/
+/raw_data/
 dataset.zip
 *.zip
 *.tar
@@ -74,10 +74,10 @@ tmp/
 temp/
 
 # ==========================================
-# Models, Checkpoints & Weights
+# Models, Checkpoints & Weights (Root-level only)
 # ==========================================
-saved_models/
-checkpoints/
+/saved_models/
+/checkpoints/
 *.h5
 *.keras
 *.pb
@@ -92,19 +92,19 @@ assets/
 # ==========================================
 # Logs, TensorBoard & Experiment Tracking
 # ==========================================
-logs/
-tensorboard/
-wandb/
+/logs/
+/tensorboard/
+/wandb/
 .wandb/
 *.log
 
 # ==========================================
 # Plots, Visualizations & Outputs
 # ==========================================
-plots/
-results/
-outputs/
-output/
+/plots/
+/results/
+/outputs/
+/output/
 
 # ==========================================
 # Environment & Secrets
