@@ -97,6 +97,23 @@ def parse_args():
         default=None,
         help="Optional max sample limit per split for rapid prototyping/benchmarking"
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume training from existing saved model weights if available"
+    )
+    parser.add_argument(
+        "--resume-weights",
+        type=str,
+        default=None,
+        help="Optional explicit path to model weights file (.h5) to resume from"
+    )
+    parser.add_argument(
+        "--initial-epoch",
+        type=int,
+        default=0,
+        help="Epoch index to start/resume training from (default: 0)"
+    )
 
     return parser.parse_args()
 
@@ -171,18 +188,21 @@ def main():
         train_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
+        model_type=args.model,
         shuffle=True
     )
     val_gen = SparkDataGenerator(
         val_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
+        model_type=args.model,
         shuffle=False
     )
     test_gen = SparkDataGenerator(
         test_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
+        model_type=args.model,
         shuffle=False
     )
     print(f"[+] Generator Batches per Epoch: Train={len(train_gen)}, Val={len(val_gen)}, Test={len(test_gen)}")
@@ -207,6 +227,15 @@ def main():
     save_path = os.path.join(save_models_dir, f"{args.model}_spark_debris.h5")
     log_dir = os.path.join(config.checkpoint.get("log_dir", "plots/logs"), args.model)
     callbacks = get_callbacks(save_path=save_path, log_dir=log_dir)
+
+    # Check for resuming from existing checkpoint
+    resume_path = args.resume_weights or save_path
+    if (args.resume or args.resume_weights is not None) and os.path.exists(resume_path):
+        try:
+            model.load_weights(resume_path)
+            print(f"[+] RESUME SUCCESS: Loaded previous weights from '{resume_path}'.")
+        except Exception as e:
+            print(f"[!] Warning: Could not load weights from '{resume_path}': {e}")
 
     # -------------------------------------------------------------------------
     # PHASE 1: Feature Extraction Warmup (Train Classification Head Only)
@@ -251,10 +280,11 @@ def main():
             metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
         )
 
+        start_epoch = max(warmup_epochs, args.initial_epoch)
         history_phase2 = model.fit(
             train_gen,
             validation_data=val_gen,
-            initial_epoch=warmup_epochs,
+            initial_epoch=start_epoch,
             epochs=args.epochs,
             callbacks=callbacks,
             class_weight=class_weight_dict,

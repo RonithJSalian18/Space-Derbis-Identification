@@ -7,6 +7,7 @@ problem (Debris vs. Non-Debris), and loading offline preprocessed cached dataset
 """
 
 import os
+import re
 import ast
 import zipfile
 import hashlib
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import imagehash
+from sklearn.model_selection import GroupShuffleSplit, GroupKFold
 
 # Base SPARK-2022 directory defaults
 DEFAULT_SPARK_DIR = "SPARK-2022"
@@ -40,6 +42,84 @@ SPARK_CLASS_MAPPING = {
 CLASS_NAMES = ["Debris", "Non-Debris"]
 
 
+def extract_trajectory_id(record: dict) -> str:
+    """
+    Extracts unique trajectory or object sequence ID from record metadata or filename.
+    Prevents temporal video frame leakage across train/val/test splits.
+    """
+    if isinstance(record, dict):
+        if record.get("trajectory_id"):
+            return str(record["trajectory_id"])
+        if record.get("sequence_id"):
+            return str(record["sequence_id"])
+        path = record.get("path") or record.get("cached_path") or ""
+        class_name = record.get("class_name", "")
+    else:
+        path = str(record[0])
+        class_name = ""
+
+    filename = os.path.basename(path)
+    base, _ = os.path.splitext(filename)
+
+    match = re.match(r"([a-zA-Z_]+)?(\d+)?", base)
+    if match:
+        prefix = match.group(1) or "traj"
+        digits = match.group(2) or "0"
+        seq_num = int(digits) // 100 if len(digits) >= 4 else int(digits)
+        return f"{class_name}_{prefix}_{seq_num}"
+
+    return f"{class_name}_{base}"
+
+
+def split_dataset_by_trajectory(
+    records: list,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    random_state: int = 42
+) -> tuple:
+    """
+    Performs Group-Based Splitting using GroupShuffleSplit from scikit-learn.
+    Ensures a 70/15/15 Train/Val/Test split where no trajectory ID in Train 
+    exists in Val or Test sets (preventing consecutive frame data leakage).
+
+    Returns:
+        tuple: (train_records, val_records, test_records)
+    """
+    if not records:
+        return [], [], []
+
+    groups = [extract_trajectory_id(r) for r in records]
+    y = [r["label"] if isinstance(r, dict) else r[1] for r in records]
+
+    # 1. Split into Train (70%) and Temp (30% for Val + Test)
+    temp_ratio = val_ratio + test_ratio
+    gss_train = GroupShuffleSplit(n_splits=1, test_size=temp_ratio, random_state=random_state)
+    
+    train_idx, temp_idx = next(gss_train.split(records, y, groups))
+
+    train_records = [records[i] for i in train_idx]
+    temp_records = [records[i] for i in temp_idx]
+    temp_groups = [groups[i] for i in temp_idx]
+    temp_y = [y[i] for i in temp_idx]
+
+    # 2. Split Temp (30%) into Val (50% of temp = 15%) and Test (50% of temp = 15%)
+    val_share_of_temp = val_ratio / temp_ratio
+    gss_val = GroupShuffleSplit(n_splits=1, test_size=(1.0 - val_share_of_temp), random_state=random_state)
+
+    val_idx, test_idx = next(gss_val.split(temp_records, temp_y, temp_groups))
+
+    val_records = [temp_records[i] for i in val_idx]
+    test_records = [temp_records[i] for i in test_idx]
+
+    print(f"[+] Trajectory-Based Group Splitting Complete (70/15/15):")
+    print(f"   |-- Train Records: {len(train_records)} (Unique Trajectories: {len(set(groups[i] for i in train_idx))})")
+    print(f"   |-- Val Records:   {len(val_records)} (Unique Trajectories: {len(set(temp_groups[i] for i in val_idx))})")
+    print(f"   +-- Test Records:  {len(test_records)} (Unique Trajectories: {len(set(temp_groups[i] for i in test_idx))})")
+
+    return train_records, val_records, test_records
+
+
 def load_cached_records(split: str = "train", cache_dir: str = DEFAULT_CACHE_DIR) -> list:
     """
     Loads preprocessed 224x224 dataset records from the offline cache directory.
@@ -56,6 +136,9 @@ def load_cached_records(split: str = "train", cache_dir: str = DEFAULT_CACHE_DIR
     
     # Support both labels/cached_{split}.csv and cached_{split}.csv
     candidate_csvs = [
+        os.path.join(abs_cache_dir, "labels", f"cleaned_manifest_{split}.csv"),
+        os.path.join(abs_cache_dir, f"cleaned_manifest_{split}.csv"),
+        os.path.join(abs_cache_dir, "labels", "cleaned_manifest.csv"),
         os.path.join(abs_cache_dir, "labels", f"cached_{split}.csv"),
         os.path.join(abs_cache_dir, f"cached_{split}.csv")
     ]

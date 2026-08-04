@@ -41,7 +41,7 @@ class DebrisPredictor:
         Classify a single image file path.
         Returns dictionary with prediction label, confidence, and raw probabilities.
         """
-        img_tensor = preprocess_image(image_path, color_mode=self.color_mode)
+        img_tensor = preprocess_image(image_path, color_mode=self.color_mode, model_type=self.model_type)
         if img_tensor is None:
             return {"error": f"Could not read image from {image_path}"}
 
