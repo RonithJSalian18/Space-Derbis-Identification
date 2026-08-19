@@ -28,13 +28,21 @@ class DebrisPredictor:
         self.model, self.color_mode = ModelFactory.create_model(architecture_name=self.model_type)
 
         try:
+            # Unfreeze top backbone layers if transfer learning architecture
+            if self.model_type in ["efficientnet", "mobilenet", "resnet"]:
+                from src.models.efficientnet_builder import unfreeze_efficientnet
+                unfreeze_efficientnet(self.model, fine_tune_at=30)
+
             # Try loading weights first if weights file
             self.model.load_weights(model_path)
             print("✅ Model weights loaded successfully!")
-        except Exception:
+        except Exception as err:
             # Fallback to full model load
-            self.model = tf.keras.models.load_model(model_path)
-            print("✅ Full model loaded successfully!")
+            try:
+                self.model = tf.keras.models.load_model(model_path)
+                print("✅ Full model loaded successfully!")
+            except Exception as e:
+                raise ValueError(f"Could not load model weights or full model from {model_path}: {err} | {e}")
 
     def predict(self, image_path, threshold=0.5):
         """
