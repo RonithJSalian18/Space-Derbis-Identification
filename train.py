@@ -31,6 +31,7 @@ from src.data import (
 )
 from src.models import (
     ModelFactory,
+    unfreeze_backbone,
     unfreeze_resnet,
     unfreeze_efficientnet,
     unfreeze_mobilenet
@@ -170,24 +171,10 @@ def get_loss_function(loss_name: str = "binary_crossentropy", label_smoothing: f
 
 
 def unfreeze_model_backbone(model: tf.keras.Model, arch_name: str, config_dict: dict = None):
-    """Directs model backbone to architecture-specific block-aware unfreezing."""
-    arch = arch_name.lower()
+    """Directs model backbone to architecture-specific block-aware unfreezing via unified unfreeze_backbone."""
     config_dict = config_dict or {}
-
-    if "resnet" in arch:
-        stage = config_dict.get("fine_tune_stage", "conv5")
-        unfreeze_resnet(model, fine_tune_stage=stage)
-        print(f"[+] Unfroze ResNet50 stage '{stage}' (BatchNormalization locked in inference mode).")
-
-    elif "efficientnet" in arch:
-        blocks = config_dict.get("fine_tune_blocks", 2)
-        unfreeze_efficientnet(model, fine_tune_blocks=blocks)
-        print(f"[+] Unfroze EfficientNetB0 top {blocks} blocks (BatchNormalization locked in inference mode).")
-
-    elif "mobilenet" in arch:
-        blocks = config_dict.get("fine_tune_blocks", 2)
-        unfreeze_mobilenet(model, fine_tune_blocks=blocks)
-        print(f"[+] Unfroze MobileNetV2 top {blocks} blocks (BatchNormalization locked in inference mode).")
+    detected = unfreeze_backbone(model, arch_name=arch_name, **config_dict)
+    print(f"[+] Unfroze {detected or arch_name} backbone (BatchNormalization locked in inference mode, config={config_dict}).")
 
 
 def main():
@@ -302,11 +289,13 @@ def main():
     os.makedirs(save_models_dir, exist_ok=True)
     save_path = os.path.join(save_models_dir, f"{args.model}_spark_debris.h5")
     log_dir = os.path.join(config.checkpoint.get("log_dir", "plots/logs"), args.model)
+    monitor_metric = config.training.get("monitor", "val_loss")
     callbacks = get_callbacks(
         save_path=save_path,
         log_dir=log_dir,
         patience_early_stopping=int(config.training.get("patience_early_stopping", 7)),
-        patience_reduce_lr=int(config.training.get("patience_reduce_lr", 3))
+        patience_reduce_lr=int(config.training.get("patience_reduce_lr", 3)),
+        monitor=monitor_metric
     )
 
     # Check for resuming from existing checkpoint
@@ -332,7 +321,13 @@ def main():
         model.compile(
             optimizer=Adam(learning_rate=lr_phase1, clipnorm=clipnorm),
             loss=loss_fn,
-            metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
+            metrics=[
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision'),
+                tf.keras.metrics.Recall(name='recall'),
+                tf.keras.metrics.AUC(name='pr_auc', curve='PR'),
+                tf.keras.metrics.AUC(name='roc_auc', curve='ROC')
+            ]
         )
 
         history_phase1 = model.fit(
@@ -359,7 +354,13 @@ def main():
         model.compile(
             optimizer=Adam(learning_rate=lr_phase2, clipnorm=clipnorm),
             loss=loss_fn,
-            metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
+            metrics=[
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision'),
+                tf.keras.metrics.Recall(name='recall'),
+                tf.keras.metrics.AUC(name='pr_auc', curve='PR'),
+                tf.keras.metrics.AUC(name='roc_auc', curve='ROC')
+            ]
         )
 
         start_epoch = max(warmup_epochs, args.initial_epoch)

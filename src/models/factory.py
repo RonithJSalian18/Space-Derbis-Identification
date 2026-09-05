@@ -80,7 +80,13 @@ class ModelFactory:
         model.compile(
             optimizer=optimizer,
             loss=loss_fn,
-            metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
+            metrics=[
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision'),
+                tf.keras.metrics.Recall(name='recall'),
+                tf.keras.metrics.AUC(name='pr_auc', curve='PR'),
+                tf.keras.metrics.AUC(name='roc_auc', curve='ROC')
+            ]
         )
 
         return model, color_mode

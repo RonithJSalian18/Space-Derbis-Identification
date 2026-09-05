@@ -1,4 +1,4 @@
-tensorflow==2.10.1
+tensorflow>=2.10.0,<2.16.0
 numpy<2.0.0
 opencv-python
 matplotlib

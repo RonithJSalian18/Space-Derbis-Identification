@@ -271,6 +271,21 @@ def evaluate_and_plot(
     report = classification_report(y_test, y_pred, target_names=class_names, digits=4)
     print("\nClassification Report:\n", report)
 
+    # Compute ROC and PR Curves & headline primary metrics (Safety-Critical & Imbalance Focus)
+    fpr, tpr, _ = roc_curve(y_test, y_pred_probs)
+    roc_auc = float(auc(fpr, tpr))
+    precision, recall, _ = precision_recall_curve(y_test, y_pred_probs)
+    pr_auc = float(auc(recall, precision))
+
+    print("==================================================")
+    print("🎯 PRIMARY METRICS SUMMARY (Safety-Critical Focus):")
+    print(f"   |-- PR-AUC (Precision-Recall AUC): {pr_auc:.4f}")
+    print(f"   |-- Debris Recall (Sensitivity):    {test_rec:.4f}")
+    print(f"   |-- F1-Score (Optimal Threshold):   {test_f1:.4f}")
+    print(f"   |-- ROC-AUC:                        {roc_auc:.4f}")
+    print(f"   +-- Test Accuracy:                  {test_acc:.4f}")
+    print("==================================================")
+
     # Compute Calibration Metrics
     ece, bin_acc, bin_conf, bin_counts = compute_expected_calibration_error(y_test, y_pred_probs, n_bins=10)
     brier = compute_brier_score(y_test, y_pred_probs)
@@ -298,8 +313,6 @@ def evaluate_and_plot(
     plt.close()
 
     # 2. ROC Curve Plot
-    fpr, tpr, _ = roc_curve(y_test, y_pred_probs)
-    roc_auc = float(auc(fpr, tpr))
     plt.figure(figsize=(6, 5))
     plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC Curve (AUC = {roc_auc:.4f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Chance')
@@ -314,8 +327,6 @@ def evaluate_and_plot(
     plt.close()
 
     # 3. Precision-Recall Curve with Prevalence Baseline
-    precision, recall, _ = precision_recall_curve(y_test, y_pred_probs)
-    pr_auc = float(auc(recall, precision))
     prevalence = float(np.mean(y_test))
     plt.figure(figsize=(6, 5))
     plt.plot(recall, precision, color='blue', lw=2, label=f'PR Curve (AUC = {pr_auc:.4f})')

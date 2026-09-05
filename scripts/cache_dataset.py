@@ -28,6 +28,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src.data.loader import get_cleaned_dataset, split_dataset_by_trajectory, extract_trajectory_id
 from src.data.preprocessing import crop_bbox_and_pad_square
+from scripts.deduplicate_cache import process_deduplication
 
 
 def cache_records_subset(records: list, split_name: str, target_dir: str = "SPARK-2022-Preprocessed") -> str:
@@ -130,6 +131,9 @@ def main():
     parser = argparse.ArgumentParser(description="Precompute and Cache 224x224 Images for SPARK-2022 with Grouping & Reflection Padding")
     parser.add_argument("--spark-dir", type=str, default="SPARK-2022", help="Source dataset root directory")
     parser.add_argument("--target-dir", type=str, default="SPARK-2022-Preprocessed", help="Target cache directory")
+    parser.add_argument("--deduplicate", action="store_true", default=True, help="Automatically run pHash deduplication on cached splits (default: True)")
+    parser.add_argument("--no-deduplicate", dest="deduplicate", action="store_false", help="Disable perceptual hash deduplication")
+    parser.add_argument("--hash-threshold", type=int, default=2, help="Hamming distance threshold for pHash deduplication (default: 2)")
     args = parser.parse_args()
 
     total_start = time.time()
@@ -137,13 +141,14 @@ def main():
     print("[+] SPARK-2022 LEAK-FREE OFFLINE DATASET CACHING ENGINE")
     print(f"Source Directory: {args.spark_dir}")
     print(f"Target Directory: {args.target_dir}")
+    print(f"Auto-Deduplication: {args.deduplicate} (pHash Hamming Distance <= {args.hash_threshold})")
     print("==================================================")
 
     # STEP 1: Ingest full raw 110,000 records from SPARK-2022
     print("\n[+] STEP 1: Ingesting entire 110,000 raw SPARK-2022 dataset...")
     raw_all_records = get_cleaned_dataset(spark_dir=args.spark_dir)
 
-    # STEP 2: Trajectory grouping & deduplication executed FIRST before splitting & caching
+    # STEP 2: Trajectory grouping (GroupShuffleSplit) executed FIRST before splitting & caching
     print("\n[+] STEP 2: Grouping trajectory sequences (GroupShuffleSplit) FIRST to prevent frame leakage...")
     train_recs, val_recs, test_recs = split_dataset_by_trajectory(
         raw_all_records,
@@ -159,9 +164,28 @@ def main():
     cache_records_subset(val_recs, split_name="val", target_dir=args.target_dir)
     cache_records_subset(test_recs, split_name="test", target_dir=args.target_dir)
 
+    # STEP 4: Automated Perceptual Hash Deduplication (pHash)
+    if args.deduplicate:
+        print("\n[+] STEP 4: Running Multi-Core Perceptual Hash Deduplication (pHash)...")
+        for split in ["train", "val", "test"]:
+            cached_csv = os.path.join(args.target_dir, "labels", f"cached_{split}.csv")
+            cleaned_csv = os.path.join(args.target_dir, "labels", f"cleaned_manifest_{split}.csv")
+            if os.path.exists(cached_csv):
+                process_deduplication(
+                    manifest_csv=cached_csv,
+                    cache_dir=args.target_dir,
+                    threshold=args.hash_threshold,
+                    output_csv=cleaned_csv
+                )
+                # Sync root level manifest as well
+                root_cleaned = os.path.join(args.target_dir, f"cleaned_manifest_{split}.csv")
+                import shutil
+                if os.path.exists(cleaned_csv):
+                    shutil.copyfile(cleaned_csv, root_cleaned)
+
     total_elapsed = time.time() - total_start
     print("\n==================================================")
-    print(f"[+] LEAK-FREE CACHING COMPLETED SUCCESSFULLY in {total_elapsed / 60.0:.2f} minutes!")
+    print(f"[+] LEAK-FREE CACHING & DEDUPLICATION COMPLETED in {total_elapsed / 60.0:.2f} minutes!")
     print(f"Cached Dataset Root: {os.path.abspath(args.target_dir)}")
     print("==================================================")
 

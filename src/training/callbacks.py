@@ -7,7 +7,9 @@ def get_callbacks(
     save_path: str,
     log_dir: str = "plots/logs",
     patience_early_stopping: int = 7,
-    patience_reduce_lr: int = 3
+    patience_reduce_lr: int = 3,
+    monitor: str = "val_loss",
+    mode: str = "auto"
 ) -> list:
     """
     Construct training callbacks including ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, and TensorBoard.
@@ -18,23 +20,26 @@ def get_callbacks(
 
     callbacks = [
         EarlyStopping(
-            monitor='val_loss',
+            monitor=monitor,
             patience=patience_early_stopping,
             restore_best_weights=True,
+            mode=mode,
             verbose=1
         ),
         ReduceLROnPlateau(
-            monitor='val_loss',
+            monitor=monitor,
             factor=0.5,
             patience=patience_reduce_lr,
             min_lr=1e-6,
+            mode=mode,
             verbose=1
         ),
         ModelCheckpoint(
             save_path,
-            monitor='val_loss',
+            monitor=monitor,
             save_best_only=True,
             save_weights_only=True,
+            mode=mode,
             verbose=1
         ),
         TensorBoard(
@@ -44,3 +49,4 @@ def get_callbacks(
         )
     ]
     return callbacks
+
