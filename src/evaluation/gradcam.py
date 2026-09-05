@@ -182,11 +182,18 @@ def run_zero_trust_audit(
         model = tf.keras.models.load_model(model_path, compile=False)
         print("✅ Full model architecture and weights loaded successfully.")
     except Exception:
-        from src.models import ModelFactory
+        from src.models import ModelFactory, unfreeze_resnet, unfreeze_efficientnet, unfreeze_mobilenet
         print("[+] Model file contains weights only. Instantiating architecture via ModelFactory...")
         model, _ = ModelFactory.create_model(architecture_name=model_type)
+        if "resnet" in model_type.lower():
+            unfreeze_resnet(model)
+        elif "efficientnet" in model_type.lower() or "effinet" in model_type.lower():
+            unfreeze_efficientnet(model)
+        elif "mobilenet" in model_type.lower():
+            unfreeze_mobilenet(model)
         model.load_weights(model_path)
         print("✅ Model weights loaded into architecture successfully.")
+
 
     backbone_name, last_conv_name = find_last_conv_layer(model)
     print(f"[+] Target Conv Layer Identified: Backbone='{backbone_name}', Layer='{last_conv_name}'")
@@ -208,22 +215,28 @@ def run_zero_trust_audit(
 
     heatmap = make_gradcam_heatmap(img_tensor, model, backbone_name, last_conv_name)
 
-    # Prepare display RGB image
+    # Prepare display RGB image in [0, 1] float32
     if img_tensor.shape[-1] == 1:
         img_rgb = np.repeat(img_tensor, 3, axis=-1)
     else:
         img_rgb = img_tensor.copy()
 
-    heatmap_resized = cv2.resize(heatmap, (img_rgb.shape[1], img_rgb.shape[0]))
-    heatmap_color = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_JET)
-    heatmap_color = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB) / 255.0
+    if np.max(img_rgb) > 1.0:
+        img_display = (img_rgb / 255.0).astype(np.float32)
+    else:
+        img_display = img_rgb.astype(np.float32)
 
-    overlay = cv2.addWeighted(np.float32(img_rgb), 0.6, np.float32(heatmap_color), 0.4, 0)
+    heatmap_resized = cv2.resize(heatmap, (img_display.shape[1], img_display.shape[0]))
+    heatmap_color = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_JET)
+    heatmap_color = (cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB) / 255.0).astype(np.float32)
+
+    overlay = cv2.addWeighted(img_display, 0.6, heatmap_color, 0.4, 0)
 
     # Create figure with colorbar
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
 
-    axes[0].imshow(img_rgb)
+    axes[0].imshow(img_display)
+
     axes[0].set_title("Input Space Image (224x224)", fontsize=11, fontweight='bold')
     axes[0].axis('off')
 

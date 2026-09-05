@@ -15,14 +15,16 @@ data:
 training:
   epochs: 30
   warmup_epochs: 5
-  lr_phase1: 0.001
-  lr_phase2: 0.0001
+  lr_phase1: 0.0005
+  lr_phase2: 0.00002
   learning_rate: 0.0001
   optimizer: "adam"
   loss: "binary_crossentropy"
-  label_smoothing: 0.0
+  label_smoothing: 0.05
   use_class_weights: true
   clipnorm: 1.0
+  patience_early_stopping: 7
+  patience_reduce_lr: 3
 
 checkpoint:
   saved_models_dir: "saved_models"
@@ -36,16 +38,20 @@ models:
     dropout_rate: 0.5
   mobilenet:
     color_mode: "rgb"
-    learning_rate: 0.0001
+    learning_rate: 0.0005
+    l2_reg: 0.0001
     dropout_rate: 0.3
-    fine_tune_at: 30
+    fine_tune_blocks: 2
   resnet:
     color_mode: "rgb"
-    learning_rate: 0.0001
+    learning_rate: 0.0005
+    l2_reg: 0.0001
     dropout_rate: 0.3
-    fine_tune_at: 30
+    fine_tune_stage: "conv5"
   efficientnet:
     color_mode: "rgb"
-    learning_rate: 0.0001
+    learning_rate: 0.0005
+    l2_reg: 0.0001
     dropout_rate: 0.3
-    fine_tune_at: 30
+    fine_tune_blocks: 2
+

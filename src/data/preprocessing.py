@@ -21,37 +21,28 @@ from configs import IMAGE_SIZE
 
 def apply_architecture_preprocessing(img: np.ndarray, model_type: str = "cnn") -> np.ndarray:
     """
-    Applies strict model-specific normalization routing to an image array [0, 255] uint8/float32:
-    - 'resnet' / 'resnet50': Converts RGB to BGR and applies ImageNet mean subtraction via resnet.preprocess_input.
-    - 'mobilenet' / 'mobilenetv2': Scales pixels to range [-1.0, 1.0] via mobilenet_v2.preprocess_input.
-    - 'efficientnet' / 'efficientnetb0': Retains raw [0.0, 255.0] float32 tensor for native internal scaling.
-    - 'cnn': Scales pixels to range [0.0, 1.0] (image / 255.0).
+    Applies unified model-specific normalization routing to an image array [0, 255] uint8/float32:
+    - 'resnet' / 'resnet50', 'mobilenet' / 'mobilenetv2', 'efficientnet' / 'efficientnetb0':
+      Preserves standard [0.0, 255.0] float32 RGB tensor. Each architecture builder applies its
+      native mathematical preprocessing internally in the Keras graph (no double-scaling).
+    - 'cnn': Scales pixels to normalized [0.0, 1.0] range (image / 255.0).
 
     Args:
         img (np.ndarray): Image array with shape (H, W, C) in RGB or Grayscale format (values 0-255).
         model_type (str): Target model architecture ('resnet50', 'mobilenetv2', 'efficientnetb0', 'cnn').
 
     Returns:
-        np.ndarray: Preprocessed float32 tensor matching target model input scale.
+        np.ndarray: Clean float32 tensor matching target model input contract.
     """
     arch = (model_type or "cnn").lower().replace("_", "").replace("-", "")
     img_float = img.astype(np.float32)
 
-    if "resnet" in arch:
-        from tensorflow.keras.applications.resnet import preprocess_input as resnet_preprocess
-        return resnet_preprocess(img_float)
-
-    elif "mobilenet" in arch:
-        from tensorflow.keras.applications.mobilenet_v2 import preprocess_input as mobilenet_preprocess
-        return mobilenet_preprocess(img_float)
-
-    elif "efficientnet" in arch or "effinet" in arch:
-        # EfficientNet has internal rescaling; return raw [0, 255] float32 tensor
+    if any(t in arch for t in ["resnet", "mobilenet", "efficientnet", "effinet", "mobile", "res"]):
         return img_float
-
     else:
         # Standard [0.0, 1.0] scaling for custom CNN
         return img_float / 255.0
+
 
 
 def center_crop_and_resize(img: np.ndarray, target_size: tuple = IMAGE_SIZE) -> np.ndarray:

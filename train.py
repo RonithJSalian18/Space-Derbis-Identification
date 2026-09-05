@@ -6,7 +6,7 @@ and Keras Custom Sequence Generators (SparkDataGenerator) for zero-I/O bottlenec
 RAM-efficient GPU training across 110,000 images.
 
 Usage examples:
-    python train.py --model cnn --epochs 25
+    python train.py --model resnet --epochs 25
     python train.py --model efficientnet --epochs 30 --max-samples 5000
     python train.py --model mobilenet --epochs 20
 """
@@ -29,7 +29,12 @@ from src.data import (
     get_cleaned_dataset,
     SparkDataGenerator
 )
-from src.models import ModelFactory, unfreeze_efficientnet
+from src.models import (
+    ModelFactory,
+    unfreeze_resnet,
+    unfreeze_efficientnet,
+    unfreeze_mobilenet
+)
 from src.training import get_callbacks
 from src.evaluation import evaluate_and_plot, plot_learning_curves
 
@@ -39,9 +44,9 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="cnn",
+        default="resnet",
         choices=["cnn", "custom_cnn", "mobilenet", "resnet", "efficientnet"],
-        help="Model architecture to train (default: cnn)"
+        help="Model architecture to train (default: resnet)"
     )
     parser.add_argument(
         "--config",
@@ -82,14 +87,27 @@ def parse_args():
     parser.add_argument(
         "--lr-phase1",
         type=float,
-        default=1e-3,
-        help="Learning rate for Phase 1 head warmup (default: 1e-3)"
+        default=None,
+        help="Learning rate for Phase 1 head warmup (default from config: 5e-4)"
     )
     parser.add_argument(
         "--lr-phase2",
         type=float,
-        default=1e-4,
-        help="Learning rate for Phase 2 backbone fine-tuning (default: 1e-4)"
+        default=None,
+        help="Learning rate for Phase 2 backbone fine-tuning (default from config: 2e-5)"
+    )
+    parser.add_argument(
+        "--loss",
+        type=str,
+        default=None,
+        choices=["binary_crossentropy", "focal", "binary_focal_crossentropy"],
+        help="Loss function type (default from config: binary_crossentropy)"
+    )
+    parser.add_argument(
+        "--label-smoothing",
+        type=float,
+        default=None,
+        help="Label smoothing factor (default from config: 0.05)"
     )
     parser.add_argument(
         "--max-samples",
@@ -133,6 +151,40 @@ def load_dataset_records(split: str, cache_dir: str, spark_dir: str) -> list:
         return load_spark_split(split=split, spark_dir=spark_dir)
 
 
+def get_loss_function(loss_name: str = "binary_crossentropy", label_smoothing: float = 0.05):
+    """Instantiates stabilized Loss function with label smoothing."""
+    loss_lower = (loss_name or "binary_crossentropy").lower()
+    if "focal" in loss_lower:
+        if hasattr(tf.keras.losses, "BinaryFocalCrossentropy"):
+            return tf.keras.losses.BinaryFocalCrossentropy(
+                gamma=2.0,
+                label_smoothing=label_smoothing,
+                from_logits=False
+            )
+    return tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
+
+
+def unfreeze_model_backbone(model: tf.keras.Model, arch_name: str, config_dict: dict = None):
+    """Directs model backbone to architecture-specific block-aware unfreezing."""
+    arch = arch_name.lower()
+    config_dict = config_dict or {}
+
+    if "resnet" in arch:
+        stage = config_dict.get("fine_tune_stage", "conv5")
+        unfreeze_resnet(model, fine_tune_stage=stage)
+        print(f"[+] Unfroze ResNet50 stage '{stage}' (BatchNormalization locked in inference mode).")
+
+    elif "efficientnet" in arch:
+        blocks = config_dict.get("fine_tune_blocks", 2)
+        unfreeze_efficientnet(model, fine_tune_blocks=blocks)
+        print(f"[+] Unfroze EfficientNetB0 top {blocks} blocks (BatchNormalization locked in inference mode).")
+
+    elif "mobilenet" in arch:
+        blocks = config_dict.get("fine_tune_blocks", 2)
+        unfreeze_mobilenet(model, fine_tune_blocks=blocks)
+        print(f"[+] Unfroze MobileNetV2 top {blocks} blocks (BatchNormalization locked in inference mode).")
+
+
 def main():
     args = parse_args()
 
@@ -144,9 +196,17 @@ def main():
     tf.random.set_seed(seed)
     setup_gpu()
 
+    # Determine hyperparameters with CLI overrides
+    lr_phase1 = args.lr_phase1 if args.lr_phase1 is not None else float(config.training.get("lr_phase1", 5e-4))
+    lr_phase2 = args.lr_phase2 if args.lr_phase2 is not None else float(config.training.get("lr_phase2", 2e-5))
+    loss_name = args.loss or config.training.get("loss", "binary_crossentropy")
+    label_smoothing = args.label_smoothing if args.label_smoothing is not None else float(config.training.get("label_smoothing", 0.05))
+    clipnorm = float(config.training.get("clipnorm", 1.0))
+
     print("==================================================")
     print(f"[+] STARTING SPARK-2022 TRAINING PIPELINE | Architecture: {args.model.upper()}")
     print(f"[+] Total Epochs: {args.epochs} | Warmup Epochs: {args.warmup_epochs} | Batch Size: {args.batch_size}")
+    print(f"[+] Phase 1 LR: {lr_phase1} | Phase 2 LR: {lr_phase2} | Loss: {loss_name} (Smoothing: {label_smoothing})")
     print(f"[+] Dataset Cache Path: {args.cache_dir}")
     print("==================================================")
 
@@ -173,11 +233,14 @@ def main():
         test_records = debris_test[:min(len(debris_test), 5)] + non_debris_test[:min(len(non_debris_test), 15)]
 
     # 3. Instantiate Architecture via Factory Pattern
+    model_cfg = config.models.get(args.model, {}).copy()
+    model_cfg["loss"] = loss_name
+
     model, color_mode = ModelFactory.create_model(
         architecture_name=args.model,
-        learning_rate=args.lr_phase1,
-        label_smoothing=config.training.get("label_smoothing", 0.0),
-        config=config.models.get(args.model, {})
+        learning_rate=lr_phase1,
+        label_smoothing=label_smoothing,
+        config=model_cfg
     )
     print(f"\n[+] Architecture '{args.model.upper()}' compiled (Color mode: {color_mode}):")
     model.summary()
@@ -226,7 +289,12 @@ def main():
     os.makedirs(save_models_dir, exist_ok=True)
     save_path = os.path.join(save_models_dir, f"{args.model}_spark_debris.h5")
     log_dir = os.path.join(config.checkpoint.get("log_dir", "plots/logs"), args.model)
-    callbacks = get_callbacks(save_path=save_path, log_dir=log_dir)
+    callbacks = get_callbacks(
+        save_path=save_path,
+        log_dir=log_dir,
+        patience_early_stopping=int(config.training.get("patience_early_stopping", 7)),
+        patience_reduce_lr=int(config.training.get("patience_reduce_lr", 3))
+    )
 
     # Check for resuming from existing checkpoint
     resume_path = args.resume_weights or save_path
@@ -241,14 +309,16 @@ def main():
     # PHASE 1: Feature Extraction Warmup (Train Classification Head Only)
     # -------------------------------------------------------------------------
     warmup_epochs = min(args.warmup_epochs, args.epochs)
+    loss_fn = get_loss_function(loss_name=loss_name, label_smoothing=label_smoothing)
+
     if warmup_epochs > 0:
         print("\n==================================================")
-        print(f"[+] PHASE 1: Feature Extraction Warmup ({warmup_epochs} Epochs, LR={args.lr_phase1})")
+        print(f"[+] PHASE 1: Feature Extraction Warmup ({warmup_epochs} Epochs, LR={lr_phase1})")
         print("==================================================")
 
         model.compile(
-            optimizer=Adam(learning_rate=args.lr_phase1, clipnorm=1.0),
-            loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=config.training.get("label_smoothing", 0.0)),
+            optimizer=Adam(learning_rate=lr_phase1, clipnorm=clipnorm),
+            loss=loss_fn,
             metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
         )
 
@@ -262,21 +332,20 @@ def main():
         print("[+] Phase 1 Warmup Complete! Classification head initialized.")
 
     # -------------------------------------------------------------------------
-    # PHASE 2: Fine-Tuning Backbone (Unfreeze Top Layers & Train Remaining Epochs)
+    # PHASE 2: Fine-Tuning Backbone (Unfreeze Top Blocks & Train Remaining Epochs)
     # -------------------------------------------------------------------------
     remaining_epochs = max(0, args.epochs - warmup_epochs)
     if remaining_epochs > 0:
         print("\n==================================================")
-        print(f"[+] PHASE 2: Fine-Tuning Backbone ({remaining_epochs} Epochs, LR={args.lr_phase2})")
+        print(f"[+] PHASE 2: Fine-Tuning Backbone ({remaining_epochs} Epochs, LR={lr_phase2})")
         print("==================================================")
 
         if args.model in ["efficientnet", "mobilenet", "resnet"]:
-            unfreeze_efficientnet(model, fine_tune_at=30)
-            print("[+] Unfroze top 30 backbone layers (BatchNormalization locked in inference mode).")
+            unfreeze_model_backbone(model, args.model, model_cfg)
 
         model.compile(
-            optimizer=Adam(learning_rate=args.lr_phase2, clipnorm=1.0),
-            loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=config.training.get("label_smoothing", 0.0)),
+            optimizer=Adam(learning_rate=lr_phase2, clipnorm=clipnorm),
+            loss=loss_fn,
             metrics=['accuracy', tf.keras.metrics.Precision(name='precision'), tf.keras.metrics.Recall(name='recall')]
         )
 
@@ -315,3 +384,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

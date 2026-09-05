@@ -317,12 +317,12 @@ python train.py --model cnn --resume --epochs 35
 ```
 
 ### Step 4: Comparative Analytics & Graph Generation
-Extract TensorBoard metrics and generate publication-ready 4-panel comparative graphs:
+Extract TensorBoard metrics and generate publication-ready 4-model comparative graphs and dashboards:
 
 ```bash
 python scripts/generate_comparative_graphs.py
 ```
-*Outputs: `plots/model_comparison_graph.png`, `cnn_vs_mobilenet_comparison.png`, and `plots/efficiency_comparison.png`.*
+*Outputs: `plots/model_comparison_graph.png`, `plots/comparison/all_models_master_summary.png`, `plots/comparison/learning_curves_comparison.png`, `plots/comparison/performance_metrics_bar_chart.png`, `plots/comparison/architectural_efficiency.png`, `plots/comparison/roc_pr_comparison.png`, and `plots/comparison/model_comparison_metrics.csv`.*
 
 ### Step 5: Production Inference
 Execute single-image classification with confidence scoring:

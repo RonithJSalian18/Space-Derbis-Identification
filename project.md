@@ -132,12 +132,16 @@ Parallel deduplication engine that uses Perceptual Hashing (`pHash`) to remove n
 ---
 
 ### 3. `scripts/generate_comparative_graphs.py`
-Analytical engine for extracting TensorBoard logs and generating comparative 4-panel learning curves and efficiency metrics.
+Comprehensive analytical engine for extracting TensorBoard training/validation logs and generating comparative 4-model benchmarking audits across **Custom CNN**, **MobileNetV2**, **ResNet-50**, and **EfficientNet-B0**.
 
 - **`extract_tensorboard_metrics(log_dir)`**: Reads step-wise loss, accuracy, precision, and recall metrics from TensorBoard `tfevents` files using `EventAccumulator`.
-- **`generate_learning_curves_comparison(cnn_tr, cnn_val, mb_tr, mb_val, save_path)`**: Generates a 2x2 grid comparing Loss, Accuracy, Precision, and Recall trajectories over training epochs.
-- **`generate_metrics_bar_chart(cnn_val, mb_val, save_path)`**: Plots peak validation score comparison bars.
-- **`generate_architectural_efficiency_chart(save_path)`**: Visualizes parameter counts, storage footprint, and latency trade-offs.
+- **`generate_master_comparison_graph(all_metrics, save_path)`**: Generates the primary 2x2 multi-panel dashboard comparing validation accuracy trajectories, peak benchmark metrics, loss convergence, and resource footprint across all 4 models (`plots/model_comparison_graph.png`).
+- **`generate_learning_curves_4models(all_metrics, save_path)`**: Plots 4 panels comparing loss, accuracy, precision, and recall learning dynamics (train vs. val) for all four architectures.
+- **`generate_metrics_bar_chart(all_metrics, save_path)`**: Plots peak validation score comparison bars (Accuracy, Precision, Recall, F1).
+- **`generate_architectural_efficiency_chart(save_path)`**: Visualizes parameter counts, checkpoint storage footprints (MB), and live GPU inference latencies (ms/image).
+- **`generate_roc_pr_comparison(save_path)`**: Computes and overlays ROC Curves and Precision-Recall Curves across all 4 models on balanced test evaluation data.
+- **`generate_executive_composite_summary(all_metrics, save_path)`**: Produces an executive 6-panel audit dashboard combining accuracy, loss, F1, latency, parameter trade-offs, and tabular summary.
+- **`export_metrics_summary(all_metrics, json_path, csv_path)`**: Exports clean machine-readable benchmarking data (`model_comparison_metrics.csv` & `.json`).
 
 ---
 
@@ -209,27 +213,30 @@ Provides architecture-specific tensor normalization and custom high-speed data g
 - **`MobileNetBuilder` (class)**: Constructs MobileNetV2 transfer learning model:
   - Freezes base backbone during construction (`base_model.trainable = False`).
   - Calls `base_model(x, training=False)` to lock Batch Normalization layers in inference mode.
-  - Classification head: GAP $\rightarrow$ Dense(128, ReLU, L2) $\rightarrow$ Dropout(0.3) $\rightarrow$ Dense(1, Sigmoid).
+  - Classification head: GAP $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(128, ReLU, He-Normal, L2) $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(1, Sigmoid, Prior-Bias=2.3).
+- **`unfreeze_mobilenet(model, fine_tune_blocks)`**: Stage-aware fine-tuning utility unfreezing top inverted residual blocks while locking Batch Normalization.
 - **`build_mobilenet(input_shape, dropout_rate)`**: Helper builder function.
 
 ---
 
 #### 4. `src/models/resnet.py`
-- **`ResNetBuilder` (class)**: Constructs ResNet50 transfer learning model:
+- **`ResNetBuilder` (class)**: Constructs stabilized ResNet50 transfer learning model:
   - Freezes backbone during construction (`base_model.trainable = False`).
-  - Uses `Rescaling(255.0)` and `resnet.preprocess_input`.
-  - Classification head: GAP $\rightarrow$ Dense(128, ReLU, L2) $\rightarrow$ Dropout(0.3) $\rightarrow$ Dense(1, Sigmoid).
+  - Uses clean single-stage `resnet.preprocess_input` (no double rescaling).
+  - Classification head: GAP $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(128, ReLU, He-Normal, L2) $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(1, Sigmoid, Prior-Bias=2.3).
+- **`unfreeze_resnet(model, fine_tune_stage)`**: Unfreezes complete residual stages (e.g. stage 5: `conv5`) while keeping Batch Normalization locked in inference mode.
 - **`build_resnet(input_shape, dropout_rate)`**: Helper builder function.
 
 ---
 
 #### 5. `src/models/efficientnet_builder.py`
-- **`EfficientNetBuilder` (class)**: Constructs EfficientNetB0 transfer learning model:
-  - Freezes backbone during build to prevent mode collapse.
-  - Invokes `efficientnet.preprocess_input` via Keras Lambda layer.
-  - Classification head: GAP $\rightarrow$ Dense(128, ReLU, L2) $\rightarrow$ Dropout(0.3) $\rightarrow$ Dense(1, Sigmoid).
-- **`unfreeze_efficientnet(model, fine_tune_at)`**: Fine-tuning utility that unfreezes top `fine_tune_at` backbone layers for Phase 2 training while maintaining all Batch Normalization layers locked in frozen mode.
+- **`EfficientNetBuilder` (class)**: Constructs stabilized EfficientNetB0 transfer learning model:
+  - Freezes backbone during initial build to prevent mode collapse.
+  - Uses native EfficientNet internal scaling (clean [0, 255] RGB float32 inputs).
+  - Classification head: GAP $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(128, ReLU, He-Normal, L2) $\rightarrow$ BatchNorm $\rightarrow$ Dropout $\rightarrow$ Dense(1, Sigmoid, Prior-Bias=2.3).
+- **`unfreeze_efficientnet(model, fine_tune_blocks)`**: Stage-aware fine-tuning utility unfreezing top MBConv blocks while maintaining all Batch Normalization layers locked in frozen mode.
 - **`build_efficientnet(input_shape, dropout_rate)`**: Helper builder function.
+
 
 ---
 

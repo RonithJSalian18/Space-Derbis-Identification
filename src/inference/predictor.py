@@ -29,9 +29,16 @@ class DebrisPredictor:
 
         try:
             # Unfreeze top backbone layers if transfer learning architecture
-            if self.model_type in ["efficientnet", "mobilenet", "resnet"]:
-                from src.models.efficientnet_builder import unfreeze_efficientnet
-                unfreeze_efficientnet(self.model, fine_tune_at=30)
+            if "resnet" in self.model_type:
+                from src.models import unfreeze_resnet
+                unfreeze_resnet(self.model)
+            elif "efficientnet" in self.model_type or "effinet" in self.model_type:
+                from src.models import unfreeze_efficientnet
+                unfreeze_efficientnet(self.model)
+            elif "mobilenet" in self.model_type:
+                from src.models import unfreeze_mobilenet
+                unfreeze_mobilenet(self.model)
+
 
             # Try loading weights first if weights file
             self.model.load_weights(model_path)

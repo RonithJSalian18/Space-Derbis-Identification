@@ -61,7 +61,21 @@ class ModelFactory:
         model = builder.build()
 
         optimizer = Adam(learning_rate=default_lr, clipnorm=1.0)
-        loss_fn = tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
+        
+        # Configure loss function (BinaryFocalCrossentropy or BinaryCrossentropy)
+        loss_name = (config.get("loss", "binary_crossentropy") if config else "binary_crossentropy").lower()
+        if "focal" in loss_name:
+            gamma = float(config.get("gamma", 2.0)) if config else 2.0
+            if hasattr(tf.keras.losses, "BinaryFocalCrossentropy"):
+                loss_fn = tf.keras.losses.BinaryFocalCrossentropy(
+                    gamma=gamma,
+                    label_smoothing=label_smoothing,
+                    from_logits=False
+                )
+            else:
+                loss_fn = tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
+        else:
+            loss_fn = tf.keras.losses.BinaryCrossentropy(label_smoothing=label_smoothing)
 
         model.compile(
             optimizer=optimizer,
@@ -70,3 +84,4 @@ class ModelFactory:
         )
 
         return model, color_mode
+
