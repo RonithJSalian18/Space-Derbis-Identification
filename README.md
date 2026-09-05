@@ -17,13 +17,15 @@ Engineered with zero-I/O bottleneck cached streaming, Group-Based trajectory spl
 
 - [🛰️ System Architecture & Workflow](#️-system-architecture--workflow)
 - [📌 Key Engineering Innovations & Technical Solutions](#-key-engineering-innovations--technical-solutions)
-  - [1. Trajectory-Based Group Splitting (Eliminating Data Leakage)](#1-trajectory-based-group-splitting-eliminating-data-leakage)
+  - [1. Trajectory-Based Group Splitting (Zero-Leakage Guarantee)](#1-trajectory-based-group-splitting-zero-leakage-guarantee)
   - [2. Multi-Core Perceptual Hash Deduplication (`pHash`)](#2-multi-core-perceptual-hash-deduplication-phash)
-  - [3. Harsh Space-Domain Augmentations (Domain Randomization)](#3-harsh-space-domain-augmentations-domain-randomization)
+  - [3. Harsh Space-Domain Physics Augmentation Engine](#3-harsh-space-domain-physics-augmentation-engine)
   - [4. Architecture-Specific Tensor Normalization Routing](#4-architecture-specific-tensor-normalization-routing)
   - [5. Two-Phase Transfer Learning with BN Inference Locking](#5-two-phase-transfer-learning-with-bn-inference-locking)
-  - [6. 10:1 Class Imbalance Mitigation & PR-Curve Optimization](#6-101-class-imbalance-mitigation--pr-curve-optimization)
-  - [7. Zero-Trust Grad-CAM Visual Audit Engine](#7-zero-trust-grad-cam-visual-audit-engine)
+  - [6. Leak-Free Precision-Recall Threshold Calibration](#6-leak-free-precision-recall-threshold-calibration)
+  - [7. Confidence Calibration (ECE) & Reliability Diagrams](#7-confidence-calibration-ece--reliability-diagrams)
+  - [8. Quantitative Explainability & Attention Audit (Pointing Game & IoU)](#8-quantitative-explainability--attention-audit-pointing-game--iou)
+  - [9. Calibrated 3-State Uncertainty Decision Policy](#9-calibrated-3-state-uncertainty-decision-policy)
 - [🧠 Supported Architectures & Benchmark Comparison](#-supported-architectures--benchmark-comparison)
 - [📂 Repository Directory Structure](#-repository-directory-structure)
 - [⚙️ Prerequisites & Environment Setup](#️-prerequisites--environment-setup)
@@ -34,8 +36,9 @@ Engineered with zero-I/O bottleneck cached streaming, Group-Based trajectory spl
   - [Step 2: Parallel Perceptual Deduplication](#step-2-parallel-perceptual-deduplication)
   - [Step 3: Model Training Pipeline](#step-3-model-training-pipeline)
   - [Step 4: Comparative Analytics & Graph Generation](#step-4-comparative-analytics--graph-generation)
-  - [Step 5: Production Inference](#step-5-production-inference)
-  - [Step 6: Zero-Trust Grad-CAM Visual Audit](#step-6-zero-trust-grad-cam-visual-audit)
+  - [Step 5: Production Inference (with Uncertainty Flagging)](#step-5-production-inference-with-uncertainty-flagging)
+  - [Step 6: Quantitative Grad-CAM Visual Audit](#step-6-quantitative-grad-cam-visual-audit)
+  - [Step 7: Automated Test Suite](#step-7-automated-test-suite)
 - [⚙️ Configuration Reference (`base_config.yaml`)](#️-configuration-reference-base_configyaml)
 - [📜 License & Acknowledgments](#-license--acknowledgments)
 
@@ -117,15 +120,29 @@ flowchart TD
   - **Phase 1 (Head Warmup)**: Backbone frozen (`trainable = False`), optimizing only the Dense classification head with $\text{LR} = 10^{-3}$.
   - **Phase 2 (Backbone Fine-Tuning)**: Top 30 layers unfrozen via [`unfreeze_efficientnet()`](file:///D:/Space-VS/Space-Derbis-Identification/src/models/efficientnet_builder.py), with all `BatchNormalization` layers explicitly locked in inference mode (`training=False`), trained with reduced $\text{LR} = 10^{-4}$.
 
-### 6. 10:1 Class Imbalance Mitigation & PR-Curve Optimization
-- **The Challenge**: Orbital datasets naturally exhibit severe class imbalance (often exceeding 10:1 non-debris spacecraft vs. debris fragments).
-- **The Solution**:
-  - **Dynamic Balanced Class Weighting**: Automatically calculates balanced loss weights using `compute_class_weight` during generator initialization.
-  - **Precision-Recall Threshold Optimization**: In [`src/evaluation/metrics.py`](file:///D:/Space-VS/Space-Derbis-Identification/src/evaluation/metrics.py), the classification decision threshold is dynamically optimized on the PR curve to maximize F1-score rather than assuming a fixed $0.5$ threshold.
+### 6. Leak-Free Precision-Recall Threshold Calibration
+- **The Challenge**: Tuning decision thresholds directly on test data introduces critical test-set leakage, artificially inflating reported test metrics.
+- **The Solution**: Implemented [`find_optimal_threshold()`](file:///D:/Space-VS/Space-Derbis-Identification/src/evaluation/metrics.py#L82-L115). The optimal decision threshold $\tau^*$ is discovered strictly on the **Validation split** by maximizing validation F1-score:
+  $$\tau^* = \arg\max_{\tau} F_1(\tau; \mathcal{D}_{\text{val}})$$
+  This threshold is **frozen** and directly applied to the held-out **Test split**, eliminating test leakage and ensuring scientific validity.
 
-### 7. Zero-Trust Grad-CAM Visual Audit Engine
-- **The Challenge**: Neural networks can achieve high accuracy by learning spurious shortcuts (e.g., rendering engine border artifacts or dark background corner patterns) rather than actual spacecraft structural features.
-- **The Solution**: Built an automated Zero-Trust Grad-CAM auditing engine in [`src/evaluation/gradcam.py`](file:///D:/Space-VS/Space-Derbis-Identification/src/evaluation/gradcam.py). It dynamically navigates model graphs, locates the target Conv2D feature layer, calculates gradients w.r.t. the predicted class, and exports JET colormap heatmaps with calibrated intensity colorbars to verify feature attribution on spacecraft geometry.
+### 7. Confidence Calibration (ECE) & Reliability Diagrams
+- **The Challenge**: Deep neural networks frequently produce overconfident probability estimates that misrepresent the true likelihood of target detection in mission-critical space operations.
+- **The Solution**: Integrated **Expected Calibration Error (ECE)** and Brier score tracking in [`src/evaluation/metrics.py`](file:///D:/Space-VS/Space-Derbis-Identification/src/evaluation/metrics.py#L117-L157). Generates publication-ready `reliability_diagram.png` plots alongside empirical 95% bootstrap confidence intervals for F1, Recall, Precision, and Accuracy.
+
+### 8. Quantitative Explainability & Attention Audit (Pointing Game & IoU)
+- **The Challenge**: Qualitative Grad-CAM overlays look convincing but lack objective verification of whether models attend to true spacecraft features versus empty background space.
+- **The Solution**: Implemented formal quantitative attention metrics in [`src/evaluation/gradcam.py`](file:///D:/Space-VS/Space-Derbis-Identification/src/evaluation/gradcam.py):
+  - **Pointing Game Accuracy**: Evaluates whether peak activation coordinates lie strictly inside ground-truth bounding boxes: $\arg\max_{(x,y)} H(x,y) \in \text{BBox}_{\text{gt}}$.
+  - **Activation Energy inside BBox**: Measures the percentage of total activation focused on target geometry versus space noise.
+  - **CAM-BBox IoU**: Computes Intersection-over-Union between thresholded CAM masks and annotation boxes.
+
+### 9. Calibrated 3-State Uncertainty Decision Policy
+- **The Challenge**: Forcing binary decisions on ambiguous, low-illumination space imagery can result in catastrophic false negatives (missed debris collisions).
+- **The Solution**: Built a 3-state decision policy into [`DebrisPredictor`](file:///D:/Space-VS/Space-Derbis-Identification/src/inference/predictor.py#L54-L100) and [`predict.py`](file:///D:/Space-VS/Space-Derbis-Identification/predict.py):
+  - $P(\text{Non-Debris}) > \tau^*$: **Confident Non-Debris Spacecraft**
+  - $P(\text{Non-Debris}) < 0.35$: **Confident Space Debris**
+  - $0.35 \le P(\text{Non-Debris}) \le 0.65$: **Uncertain (Flagged for Multi-Sensor or Human Review)**
 
 ---
 
@@ -199,19 +216,24 @@ Space-Debris-Identification/
 │   │   └── factory.py                    # Central ModelFactory registry
 │   ├── evaluation/                       # Evaluation Pipelines & Visual Auditing
 │   │   ├── __init__.py
-│   │   ├── gradcam.py                    # Dynamic Zero-Trust Grad-CAM visual heatmap engine
-│   │   └── metrics.py                    # PR-threshold optimizer, confusion matrix & ROC/PR curves
+│   │   ├── gradcam.py                    # Quantitative Grad-CAM (Pointing Game, Energy inside BBox, IoU)
+│   │   └── metrics.py                    # Leak-free threshold tuner, ECE, Brier score, bootstrap 95% CIs
 │   ├── inference/                        # Production Inference Engine
 │   │   ├── __init__.py
-│   │   └── predictor.py                  # DebrisPredictor single-image prediction wrapper
+│   │   └── predictor.py                  # DebrisPredictor 3-state uncertainty classification wrapper
 │   ├── training/                         # Training Callbacks & Optimizers
 │   │   ├── __init__.py
 │   │   └── callbacks.py                  # ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, TensorBoard
 │   └── utils/                            # Hardware & System Utilities
 │       ├── __init__.py
 │       └── gpu.py                        # Dynamic GPU VRAM growth allocator
+├── tests/                                # Automated Pytest Test Suite (11 Tests)
+│   ├── test_gradcam.py                   # Pointing game, activation energy, and IoU tests
+│   ├── test_leakage.py                   # Split isolation & zero trajectory overlap assertions
+│   ├── test_metrics.py                   # Leak-free validation thresholding & ECE calibration tests
+│   └── test_preprocessing.py             # Normalization ranges & 1:1 label alignment tests
 ├── train.py                              # Unified CLI orchestrator for Phase 1 & Phase 2 training
-├── predict.py                            # Unified CLI single-image inference entrypoint
+├── predict.py                            # Unified CLI single-image inference entrypoint (with uncertainty)
 ├── cnn_vs_mobilenet_comparison.png       # Publication-ready comparative performance chart
 ├── Dockerfile                            # Production GPU Docker container specification
 ├── requirements.txt                      # Python dependencies manifest
@@ -376,6 +398,19 @@ python -m src.evaluation.gradcam \
 ```
 *Outputs: High-resolution visual overlays saved to `plots/gradcam_audit/`.*
 
+### Step 7: Automated Scientific Test Suite
+Execute the automated pytest suite to verify zero-leakage trajectory splits, tensor normalization contracts, leak-free threshold discovery, calibration calculations, and Grad-CAM pointing accuracy:
+
+```bash
+pytest tests/ -v
+```
+
+**Test Suite Highlights:**
+- `test_leakage.py`: Verifies $\text{Train} \cap \text{Val} = \emptyset$, $\text{Train} \cap \text{Test} = \emptyset$, and $\text{Val} \cap \text{Test} = \emptyset$.
+- `test_metrics.py`: Confirms threshold discovery runs on validation data, ECE calculations, and bootstrap CIs.
+- `test_preprocessing.py`: Validates architecture-specific tensor ranges and 1-to-1 sample/label generator alignment.
+- `test_gradcam.py`: Tests Pointing Game accuracy, bounding-box energy containment, and CAM-BBox IoU.
+
 ---
 
 ## ⚙️ Configuration Reference (`base_config.yaml`)
@@ -389,6 +424,7 @@ seed: 42
 data:
   image_size: [224, 224]
   batch_size: 32
+  keep_duplicates: true
   class_mapping:
     debris: 0
     non_debris: 1
@@ -397,13 +433,16 @@ data:
 training:
   epochs: 30
   warmup_epochs: 5
-  lr_phase1: 0.001
-  lr_phase2: 0.0001
+  lr_phase1: 0.0005
+  lr_phase2: 0.00002
+  learning_rate: 0.0001
   optimizer: "adam"
   loss: "binary_crossentropy"
-  label_smoothing: 0.0
+  label_smoothing: 0.05
   use_class_weights: true
   clipnorm: 1.0
+  patience_early_stopping: 7
+  patience_reduce_lr: 3
 
 checkpoint:
   saved_models_dir: "saved_models"
