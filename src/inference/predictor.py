@@ -51,10 +51,26 @@ class DebrisPredictor:
             except Exception as e:
                 raise ValueError(f"Could not load model weights or full model from {model_path}: {err} | {e}")
 
-    def predict(self, image_path, threshold=0.5):
+    def predict(
+        self,
+        image_path: str,
+        threshold: float = 0.5,
+        allow_uncertain: bool = True,
+        uncertain_lower: float = 0.35,
+        uncertain_upper: float = 0.65
+    ) -> dict:
         """
         Classify a single image file path.
-        Returns dictionary with prediction label, confidence, and raw probabilities.
+
+        Args:
+            image_path (str): Target image filepath.
+            threshold (float): Calibrated decision threshold.
+            allow_uncertain (bool): If True, flags predictions inside [uncertain_lower, uncertain_upper] as 'Uncertain'.
+            uncertain_lower (float): Lower probability bound for uncertainty zone.
+            uncertain_upper (float): Upper probability bound for uncertainty zone.
+
+        Returns:
+            dict: Structured prediction dictionary with label, confidence, status, and calibrated probabilities.
         """
         img_tensor = preprocess_image(image_path, color_mode=self.color_mode, model_type=self.model_type)
         if img_tensor is None:
@@ -66,17 +82,25 @@ class DebrisPredictor:
         prob_non_debris = float(self.model.predict(batch_tensor, verbose=0)[0][0])
         prob_debris = 1.0 - prob_non_debris
 
-        if prob_non_debris > threshold:
+        if allow_uncertain and (uncertain_lower <= prob_non_debris <= uncertain_upper):
+            label = "Uncertain"
+            status = "UNCERTAIN (FLAGGED FOR HUMAN OR MULTI-SENSOR AUDIT)"
+            confidence = max(prob_debris, prob_non_debris)
+        elif prob_non_debris > threshold:
             label = "Non-Debris"
+            status = "CONFIDENT NON-DEBRIS SPACECRAFT"
             confidence = prob_non_debris
         else:
             label = "Debris"
+            status = "CONFIDENT SPACE DEBRIS"
             confidence = prob_debris
 
         return {
             "image_path": image_path,
             "prediction": label,
+            "status": status,
             "confidence": round(confidence * 100, 2),
             "prob_debris": round(prob_debris, 4),
-            "prob_non_debris": round(prob_non_debris, 4)
+            "prob_non_debris": round(prob_non_debris, 4),
+            "threshold_applied": threshold
         }

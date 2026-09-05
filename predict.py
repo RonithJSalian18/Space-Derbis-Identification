@@ -24,22 +24,25 @@ def main():
     parser.add_argument("--model", type=str, default="saved_models/cnn_spark_debris.h5", help="Path to trained .h5 model file")
     parser.add_argument("--type", type=str, default="cnn", choices=["cnn", "mobilenet", "resnet", "efficientnet"],
                         help="Model type (cnn or transfer learning model)")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Decision threshold for debris vs non-debris")
 
     args = parser.parse_args()
 
     setup_gpu()
 
     predictor = DebrisPredictor(model_path=args.model, model_type=args.type)
-    res = predictor.predict(image_path=args.image)
+    res = predictor.predict(image_path=args.image, threshold=args.threshold)
 
     print("\n==================================================")
-    print("[+] INFERENCE RESULT")
+    print("[+] INFERENCE RESULT (SpaceGuard Vision Engine)")
     print("==================================================")
-    print(f"File Path:       {res.get('image_path')}")
-    print(f"Prediction:      {res.get('prediction')}")
-    print(f"Confidence:      {res.get('confidence')}%")
-    print(f"Debris Prob:     {res.get('prob_debris')}")
-    print(f"Non-Debris Prob: {res.get('prob_non_debris')}")
+    print(f"File Path:        {res.get('image_path')}")
+    print(f"Prediction:       {res.get('prediction')}")
+    print(f"Status:           {res.get('status', 'N/A')}")
+    print(f"Confidence:       {res.get('confidence')}%")
+    print(f"P(Debris):        {res.get('prob_debris')}")
+    print(f"P(Non-Debris):    {res.get('prob_non_debris')}")
+    print(f"Threshold:        {res.get('threshold_applied', args.threshold)}")
     print("==================================================")
 
 

@@ -155,6 +155,83 @@ def make_gradcam_heatmap(
     return heatmap.numpy()
 
 
+def compute_pointing_game_accuracy(heatmap: np.ndarray, bbox: list, target_size: tuple = (224, 224)) -> int:
+    """
+    Computes Pointing Game metric (Zhang et al.):
+    Checks whether the maximum activation point of the Grad-CAM heatmap falls inside the ground-truth bounding box.
+
+    Args:
+        heatmap (np.ndarray): 2D activation heatmap array.
+        bbox (list): Ground truth bounding box [xmin, ymin, xmax, ymax].
+        target_size (tuple): Resolution corresponding to the coordinates.
+
+    Returns:
+        int: 1 (Hit) if peak activation is inside bounding box, 0 (Miss) otherwise.
+    """
+    if bbox is None or len(bbox) != 4:
+        return 0
+
+    h_resized = cv2.resize(heatmap, target_size)
+    max_idx = np.unravel_index(np.argmax(h_resized), h_resized.shape)
+    peak_y, peak_x = int(max_idx[0]), int(max_idx[1])
+
+    xmin, ymin, xmax, ymax = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+    is_hit = int(xmin <= peak_x <= xmax and ymin <= peak_y <= ymax)
+    return is_hit
+
+
+def compute_cam_energy_inside_bbox(heatmap: np.ndarray, bbox: list, target_size: tuple = (224, 224)) -> float:
+    """
+    Computes fraction of total Grad-CAM activation energy focused inside the target bounding box.
+
+    Args:
+        heatmap (np.ndarray): 2D activation heatmap array.
+        bbox (list): Ground truth bounding box [xmin, ymin, xmax, ymax].
+        target_size (tuple): Resolution.
+
+    Returns:
+        float: Percentage of energy inside bounding box [0.0, 1.0].
+    """
+    if bbox is None or len(bbox) != 4:
+        return 0.0
+
+    h_resized = cv2.resize(heatmap, target_size)
+    total_energy = float(np.sum(h_resized))
+    if total_energy <= 1e-8:
+        return 0.0
+
+    xmin = max(0, int(bbox[0]))
+    ymin = max(0, int(bbox[1]))
+    xmax = min(target_size[0], int(bbox[2]))
+    ymax = min(target_size[1], int(bbox[3]))
+
+    inside_energy = float(np.sum(h_resized[ymin:ymax, xmin:xmax]))
+    return float(inside_energy / total_energy)
+
+
+def compute_cam_bbox_iou(heatmap: np.ndarray, bbox: list, threshold_ratio: float = 0.5, target_size: tuple = (224, 224)) -> float:
+    """
+    Computes Intersection-over-Union (IoU) between thresholded CAM heatmap and ground-truth bounding box mask.
+    """
+    if bbox is None or len(bbox) != 4:
+        return 0.0
+
+    h_resized = cv2.resize(heatmap, target_size)
+    cam_mask = (h_resized >= threshold_ratio).astype(np.uint8)
+
+    gt_mask = np.zeros(target_size, dtype=np.uint8)
+    xmin = max(0, int(bbox[0]))
+    ymin = max(0, int(bbox[1]))
+    xmax = min(target_size[0], int(bbox[2]))
+    ymax = min(target_size[1], int(bbox[3]))
+    gt_mask[ymin:ymax, xmin:xmax] = 1
+
+    intersection = np.sum((cam_mask == 1) & (gt_mask == 1))
+    union = np.sum((cam_mask == 1) | (gt_mask == 1))
+
+    return float(intersection / (union + 1e-10))
+
+
 def run_zero_trust_audit(
     model_path: str,
     image_path: str,

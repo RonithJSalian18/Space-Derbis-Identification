@@ -36,7 +36,7 @@ from src.models import (
     unfreeze_mobilenet
 )
 from src.training import get_callbacks
-from src.evaluation import evaluate_and_plot, plot_learning_curves
+from src.evaluation import evaluate_and_plot, plot_learning_curves, find_optimal_threshold
 
 
 def parse_args():
@@ -132,6 +132,11 @@ def parse_args():
         default=0,
         help="Epoch index to start/resume training from (default: 0)"
     )
+    parser.add_argument(
+        "--no-augment",
+        action="store_true",
+        help="Disable space-domain augmentations (for ablation study comparisons)"
+    )
 
     return parser.parse_args()
 
@@ -217,20 +222,24 @@ def main():
 
     # Optional sample limiting for fast prototyping
     if args.max_samples is not None and args.max_samples > 0:
-        print(f"[+] Sampling max {args.max_samples} records per split for rapid prototyping...")
+        print(f"[+] Sampling max {args.max_samples} records per split using randomized sampling (seed={seed})...")
+        rng = np.random.default_rng(seed)
         debris_train = [r for r in train_records if r["label"] == 0]
         non_debris_train = [r for r in train_records if r["label"] == 1]
         n_deb = min(len(debris_train), max(1, args.max_samples // 10))
         n_non_deb = min(len(non_debris_train), args.max_samples - n_deb)
-        train_records = debris_train[:n_deb] + non_debris_train[:n_non_deb]
+        deb_idx = rng.choice(len(debris_train), size=n_deb, replace=False) if len(debris_train) >= n_deb else range(len(debris_train))
+        non_deb_idx = rng.choice(len(non_debris_train), size=n_non_deb, replace=False) if len(non_debris_train) >= n_non_deb else range(len(non_debris_train))
+        train_records = [debris_train[i] for i in deb_idx] + [non_debris_train[i] for i in non_deb_idx]
+        rng.shuffle(train_records)
 
         debris_val = [r for r in val_records if r["label"] == 0]
         non_debris_val = [r for r in val_records if r["label"] == 1]
-        val_records = debris_val[:min(len(debris_val), 5)] + non_debris_val[:min(len(non_debris_val), 15)]
+        val_records = debris_val[:min(len(debris_val), 10)] + non_debris_val[:min(len(non_debris_val), 50)]
 
         debris_test = [r for r in test_records if r["label"] == 0]
         non_debris_test = [r for r in test_records if r["label"] == 1]
-        test_records = debris_test[:min(len(debris_test), 5)] + non_debris_test[:min(len(non_debris_test), 15)]
+        test_records = debris_test[:min(len(debris_test), 10)] + non_debris_test[:min(len(non_debris_test), 50)]
 
     # 3. Instantiate Architecture via Factory Pattern
     model_cfg = config.models.get(args.model, {}).copy()
@@ -246,32 +255,36 @@ def main():
     model.summary()
 
     # 4. Instantiate High-Speed Keras Sequence Data Generators
-    print(f"\n[+] Initializing SparkDataGenerators...")
+    augment_train = not args.no_augment
+    print(f"\n[+] Initializing SparkDataGenerators (Space-Domain Augmentation: {augment_train})...")
     train_gen = SparkDataGenerator(
         train_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
         model_type=args.model,
-        shuffle=True
+        shuffle=True,
+        augment=augment_train
     )
     val_gen = SparkDataGenerator(
         val_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
         model_type=args.model,
-        shuffle=False
+        shuffle=False,
+        augment=False
     )
     test_gen = SparkDataGenerator(
         test_records,
         batch_size=args.batch_size,
         color_mode=color_mode,
         model_type=args.model,
-        shuffle=False
+        shuffle=False,
+        augment=False
     )
     print(f"[+] Generator Batches per Epoch: Train={len(train_gen)}, Val={len(val_gen)}, Test={len(test_gen)}")
 
-    # 5. Dynamically Calculate Class Weights directly from record labels (10:1 Imbalance Mitigation)
-    y_train_labels = [record['label'] for record in train_records]
+    # 5. Dynamically Calculate Class Weights directly from verified generator labels
+    y_train_labels = train_gen.labels
     classes_arr = np.unique(y_train_labels)
     class_weights_vals = compute_class_weight(
         class_weight='balanced',
@@ -376,10 +389,29 @@ def main():
 
     if os.path.exists(save_path):
         model.load_weights(save_path)
-        print(f"[+] Loaded best model checkpoint weights from {save_path} for final test evaluation.")
+        print(f"[+] Loaded best model checkpoint weights from {save_path} for final evaluation.")
 
-    y_test_labels = np.array([r['label'] for r in test_records], dtype=np.int32)
-    evaluate_and_plot(model, test_gen, y_test_labels, save_dir=plot_dir)
+    # STEP A: Tune optimal decision threshold strictly on VALIDATION split (no test leakage)
+    print("\n[+] Calibrating decision threshold on VALIDATION split...")
+    val_pred_probs = model.predict(val_gen).ravel()
+    y_val_labels = val_gen.labels
+    min_val_len = min(len(val_pred_probs), len(y_val_labels))
+    val_pred_probs = val_pred_probs[:min_val_len]
+    y_val_labels = y_val_labels[:min_val_len]
+
+    optimal_threshold, best_val_f1, val_stats = find_optimal_threshold(y_val_labels, val_pred_probs, metric="f1")
+    print(f"[+] Validation Calibration Complete -> Optimal Threshold: {optimal_threshold:.4f} (Val F1: {best_val_f1:.4f})")
+    print(f"    (Val Precision: {val_stats.get('val_precision', 0):.4f} | Val Recall: {val_stats.get('val_recall', 0):.4f})")
+
+    # STEP B: Evaluate on held-out TEST split using frozen validation threshold
+    y_test_labels = test_gen.labels
+    evaluate_and_plot(
+        model=model,
+        X_test=test_gen,
+        y_test=y_test_labels,
+        threshold=optimal_threshold,
+        save_dir=plot_dir
+    )
 
 
 if __name__ == "__main__":

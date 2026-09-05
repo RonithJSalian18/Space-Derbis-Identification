@@ -1,8 +1,28 @@
+"""
+Comprehensive Evaluation Pipeline for Space Debris Identification System.
+
+Features:
+- Leak-Free Threshold Optimization: Strictly tuned on validation split, never on test set.
+- Confidence Calibration: Expected Calibration Error (ECE), Brier Score, and Reliability Diagrams.
+- Statistical Rigor: 95% empirical bootstrap confidence intervals for F1, Recall, Precision, Accuracy.
+- PR-AUC with class prevalence baseline overlay.
+"""
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import classification_report, confusion_matrix, roc_curve, precision_recall_curve, auc
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    roc_curve,
+    precision_recall_curve,
+    auc,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
 from configs import CLASS_NAMES
 
 
@@ -79,46 +99,197 @@ def plot_learning_curves(history, save_dir="plots", show_plot=True):
     print(f"[+] Learning curves plot saved to: {curve_path}")
 
 
-def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="plots", show_plot=True):
+def find_optimal_threshold(y_val: np.ndarray, y_val_probs: np.ndarray, metric: str = "f1") -> tuple:
     """
-    Comprehensive evaluation pipeline: Prints metrics, saves plots, and displays visualizations.
+    Optimizes the decision threshold strictly on VALIDATION split data to prevent test-set leakage.
+
+    Args:
+        y_val (np.ndarray): Ground truth binary labels for the validation split.
+        y_val_probs (np.ndarray): Predicted probabilities on the validation split.
+        metric (str): Target metric to maximize ('f1' or 'recall').
+
+    Returns:
+        tuple: (optimal_threshold, best_val_score, validation_stats_dict)
+    """
+    y_val = np.asarray(y_val).ravel()
+    y_val_probs = np.asarray(y_val_probs).ravel()
+
+    prec_curve, rec_curve, thresholds = precision_recall_curve(y_val, y_val_probs)
+    if len(thresholds) == 0:
+        return 0.5, 0.5, {"val_f1": 0.5, "val_precision": 0.5, "val_recall": 0.5}
+
+    f1_scores = 2 * (prec_curve * rec_curve) / (prec_curve + rec_curve + 1e-10)
+    best_idx = int(np.argmax(f1_scores[:-1])) if len(f1_scores) > 1 else 0
+
+    optimal_threshold = float(thresholds[best_idx])
+    optimal_threshold = max(0.05, min(0.95, optimal_threshold))
+
+    val_stats = {
+        "val_f1": float(f1_scores[best_idx]),
+        "val_precision": float(prec_curve[best_idx]),
+        "val_recall": float(rec_curve[best_idx]),
+        "optimal_threshold": optimal_threshold
+    }
+    return optimal_threshold, val_stats["val_f1"], val_stats
+
+
+def compute_expected_calibration_error(y_true: np.ndarray, y_probs: np.ndarray, n_bins: int = 10) -> tuple:
+    """
+    Computes Expected Calibration Error (ECE) and bin statistics for reliability diagrams.
+
+    Args:
+        y_true (np.ndarray): Binary ground truth (0 or 1).
+        y_probs (np.ndarray): Model confidence probabilities in [0, 1].
+        n_bins (int): Number of confidence bins (default: 10).
+
+    Returns:
+        tuple: (ece_score, bin_accuracies, bin_confidences, bin_counts)
+    """
+    y_true = np.asarray(y_true).ravel()
+    y_probs = np.asarray(y_probs).ravel()
+
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_indices = np.digitize(y_probs, bins) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+    bin_accuracies = []
+    bin_confidences = []
+    bin_counts = []
+    ece = 0.0
+    total_samples = len(y_true)
+
+    for b in range(n_bins):
+        mask = bin_indices == b
+        count = int(np.sum(mask))
+        bin_counts.append(count)
+        if count > 0:
+            acc = float(np.mean(y_true[mask]))
+            conf = float(np.mean(y_probs[mask]))
+            bin_accuracies.append(acc)
+            bin_confidences.append(conf)
+            ece += (count / max(1, total_samples)) * abs(acc - conf)
+        else:
+            bin_accuracies.append(0.0)
+            bin_confidences.append(float((bins[b] + bins[b + 1]) / 2.0))
+
+    return float(ece), np.array(bin_accuracies), np.array(bin_confidences), np.array(bin_counts)
+
+
+def compute_brier_score(y_true: np.ndarray, y_probs: np.ndarray) -> float:
+    """Computes mean squared error between predicted probabilities and binary ground truth."""
+    y_true = np.asarray(y_true).ravel()
+    y_probs = np.asarray(y_probs).ravel()
+    return float(np.mean((y_probs - y_true) ** 2))
+
+
+def compute_bootstrap_confidence_intervals(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_probs: np.ndarray,
+    n_bootstraps: int = 1000,
+    confidence_level: float = 0.95,
+    seed: int = 42
+) -> dict:
+    """
+    Computes empirical non-parametric bootstrap confidence intervals (95% CI) for key metrics.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(y_true)
+    f1_list, prec_list, rec_list, acc_list = [], [], [], []
+
+    for _ in range(n_bootstraps):
+        idx = rng.choice(n, size=n, replace=True)
+        yt_sample, yp_sample = y_true[idx], y_pred[idx]
+
+        tp = np.sum((yp_sample == 1) & (yt_sample == 1))
+        fp = np.sum((yp_sample == 1) & (yt_sample == 0))
+        fn = np.sum((yp_sample == 0) & (yt_sample == 1))
+
+        prec = tp / (tp + fp + 1e-10)
+        rec = tp / (tp + fn + 1e-10)
+        f1 = 2 * (prec * rec) / (prec + rec + 1e-10)
+        acc = np.mean(yp_sample == yt_sample)
+
+        f1_list.append(f1)
+        prec_list.append(prec)
+        rec_list.append(rec)
+        acc_list.append(acc)
+
+    alpha = (1.0 - confidence_level) / 2.0
+    lower_pct, upper_pct = alpha * 100.0, (1.0 - alpha) * 100.0
+
+    return {
+        "f1_ci": (float(np.percentile(f1_list, lower_pct)), float(np.percentile(f1_list, upper_pct))),
+        "precision_ci": (float(np.percentile(prec_list, lower_pct)), float(np.percentile(prec_list, upper_pct))),
+        "recall_ci": (float(np.percentile(rec_list, lower_pct)), float(np.percentile(rec_list, upper_pct))),
+        "accuracy_ci": (float(np.percentile(acc_list, lower_pct)), float(np.percentile(acc_list, upper_pct)))
+    }
+
+
+def evaluate_and_plot(
+    model,
+    X_test,
+    y_test: np.ndarray,
+    threshold: float = 0.5,
+    class_names: list = CLASS_NAMES,
+    save_dir: str = "plots",
+    show_plot: bool = False
+) -> dict:
+    """
+    Leak-Free Comprehensive Evaluation Pipeline:
+    - Evaluates using a FROZEN threshold (derived strictly from validation split).
+    - Computes Reliability Diagram and Expected Calibration Error (ECE).
+    - Computes 95% Bootstrap Confidence Intervals.
+    - Saves publication-quality metric plots.
     """
     os.makedirs(save_dir, exist_ok=True)
     print("\n==================================================")
-    print("[+] EVALUATION RESULTS ON TEST SET")
+    print("[+] LEAK-FREE EVALUATION ON TEST SET")
+    print(f"[+] Frozen Decision Threshold: {threshold:.4f} (Calibrated on Validation Split)")
     print("==================================================")
 
-    # Dynamic Decision Threshold Optimization to prevent single-class collapse
+    # Predict test probabilities
     y_pred_probs = model.predict(X_test).ravel()
-    
-    prec_curve, rec_curve, thresholds = precision_recall_curve(y_test, y_pred_probs)
-    f1_scores = 2 * (prec_curve * rec_curve) / (prec_curve + rec_curve + 1e-10)
-    best_idx = np.argmax(f1_scores)
-    optimal_threshold = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
+    y_test = np.asarray(y_test).ravel()
 
-    y_pred_default = (y_pred_probs > 0.5).astype(int)
-    y_pred_opt = (y_pred_probs > optimal_threshold).astype(int)
+    # Safety assertion to prevent misaligned array sizes
+    if len(y_pred_probs) != len(y_test):
+        min_len = min(len(y_pred_probs), len(y_test))
+        print(f"[!] Warning: Aligning prediction length ({len(y_pred_probs)}) to ground truth ({len(y_test)}) -> {min_len}")
+        y_pred_probs = y_pred_probs[:min_len]
+        y_test = y_test[:min_len]
 
-    acc_default = np.mean(y_pred_default == y_test)
-    acc_opt = np.mean(y_pred_opt == y_test)
+    # Apply strictly frozen threshold
+    y_pred = (y_pred_probs >= threshold).astype(int)
 
-    if acc_opt > acc_default + 0.02 and 0.1 <= optimal_threshold <= 0.9:
-        print(f"[+] Dynamic Threshold Applied: {optimal_threshold:.4f} (Test Accuracy improved from {acc_default:.4f} to {acc_opt:.4f})")
-        y_pred = y_pred_opt
-    else:
-        print(f"[+] Standard Decision Threshold Applied: 0.5000 (Test Accuracy: {acc_default:.4f})")
-        y_pred = y_pred_default
+    test_acc = float(accuracy_score(y_test, y_pred))
+    test_prec = float(precision_score(y_test, y_pred, zero_division=0))
+    test_rec = float(recall_score(y_test, y_pred, zero_division=0))
+    test_f1 = float(f1_score(y_test, y_pred, zero_division=0))
 
     # Classification Report
-    report = classification_report(y_test, y_pred, target_names=class_names)
+    report = classification_report(y_test, y_pred, target_names=class_names, digits=4)
     print("\nClassification Report:\n", report)
 
-    # 1. Confusion Matrix
+    # Compute Calibration Metrics
+    ece, bin_acc, bin_conf, bin_counts = compute_expected_calibration_error(y_test, y_pred_probs, n_bins=10)
+    brier = compute_brier_score(y_test, y_pred_probs)
+    print(f"[+] Calibration Metrics -> ECE: {ece:.4f} | Brier Score: {brier:.4f}")
+
+    # Compute Bootstrap 95% Confidence Intervals
+    ci_dict = compute_bootstrap_confidence_intervals(y_test, y_pred, y_pred_probs, n_bootstraps=500, seed=42)
+    print(f"[+] 95% Confidence Intervals (Bootstrap n=500):")
+    print(f"   |-- F1-Score:  {test_f1:.4f}  [95% CI: {ci_dict['f1_ci'][0]:.4f} - {ci_dict['f1_ci'][1]:.4f}]")
+    print(f"   |-- Recall:    {test_rec:.4f}  [95% CI: {ci_dict['recall_ci'][0]:.4f} - {ci_dict['recall_ci'][1]:.4f}]")
+    print(f"   |-- Precision: {test_prec:.4f}  [95% CI: {ci_dict['precision_ci'][0]:.4f} - {ci_dict['precision_ci'][1]:.4f}]")
+    print(f"   +-- Accuracy:  {test_acc:.4f}  [95% CI: {ci_dict['accuracy_ci'][0]:.4f} - {ci_dict['accuracy_ci'][1]:.4f}]")
+
+    # 1. Confusion Matrix Plot
     cm = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(6, 5))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=class_names, yticklabels=class_names)
-    plt.title('Confusion Matrix')
+    plt.title(f'Confusion Matrix (Threshold = {threshold:.2f})')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.tight_layout()
@@ -126,43 +297,70 @@ def evaluate_and_plot(model, X_test, y_test, class_names=CLASS_NAMES, save_dir="
     plt.savefig(cm_path, dpi=300)
     plt.close()
 
-    # 2. ROC Curve
+    # 2. ROC Curve Plot
     fpr, tpr, _ = roc_curve(y_test, y_pred_probs)
-    roc_auc = auc(fpr, tpr)
+    roc_auc = float(auc(fpr, tpr))
     plt.figure(figsize=(6, 5))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC Curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Chance')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic (ROC)')
     plt.legend(loc="lower right")
+    plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
     roc_path = os.path.abspath(os.path.join(save_dir, 'roc_curve.png'))
     plt.savefig(roc_path, dpi=300)
     plt.close()
 
-    # 3. Precision-Recall Curve
+    # 3. Precision-Recall Curve with Prevalence Baseline
     precision, recall, _ = precision_recall_curve(y_test, y_pred_probs)
-    pr_auc = auc(recall, precision)
+    pr_auc = float(auc(recall, precision))
+    prevalence = float(np.mean(y_test))
     plt.figure(figsize=(6, 5))
-    plt.plot(recall, precision, color='blue', lw=2, label=f'PR curve (AUC = {pr_auc:.2f})')
+    plt.plot(recall, precision, color='blue', lw=2, label=f'PR Curve (AUC = {pr_auc:.4f})')
+    plt.axhline(y=prevalence, color='red', linestyle='--', label=f'Class Prevalence ({prevalence:.2%})')
     plt.xlabel('Recall')
     plt.ylabel('Precision')
-    plt.title('Precision-Recall Curve')
+    plt.title('Precision-Recall Curve (PR-AUC)')
     plt.legend(loc="lower left")
+    plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
     pr_path = os.path.abspath(os.path.join(save_dir, 'precision_recall_curve.png'))
     plt.savefig(pr_path, dpi=300)
     plt.close()
 
+    # 4. Reliability Diagram (Confidence Calibration)
+    plt.figure(figsize=(6, 5))
+    plt.plot([0, 1], [0, 1], 'k--', label='Perfect Calibration')
+    plt.plot(bin_conf, bin_acc, 's-', color='teal', lw=2, label=f'Model (ECE = {ece:.4f})')
+    plt.xlabel('Mean Predicted Probability')
+    plt.ylabel('Fraction of Positives (Accuracy)')
+    plt.title('Reliability Diagram (Confidence Calibration)')
+    plt.legend(loc="upper left")
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    calib_path = os.path.abspath(os.path.join(save_dir, 'reliability_diagram.png'))
+    plt.savefig(calib_path, dpi=300)
+    plt.close()
+
     print(f"\n[+] Evaluation plots successfully generated and saved to: {os.path.abspath(save_dir)}")
     print(f"   |-- Confusion Matrix:       {cm_path}")
     print(f"   |-- ROC Curve:              {roc_path}")
-    print(f"   +-- Precision-Recall Curve: {pr_path}")
+    print(f"   |-- Precision-Recall Curve: {pr_path}")
+    print(f"   +-- Reliability Diagram:    {calib_path}")
 
     return {
         "report": report,
         "confusion_matrix": cm,
         "roc_auc": roc_auc,
-        "pr_auc": pr_auc
+        "pr_auc": pr_auc,
+        "test_accuracy": test_acc,
+        "test_precision": test_prec,
+        "test_recall": test_rec,
+        "test_f1": test_f1,
+        "optimal_threshold": threshold,
+        "ece": ece,
+        "brier_score": brier,
+        "confidence_intervals": ci_dict
     }

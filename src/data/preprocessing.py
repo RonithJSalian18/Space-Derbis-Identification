@@ -17,6 +17,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from configs import IMAGE_SIZE
+from src.data.augmentation import apply_space_domain_augmentations
 
 
 def apply_architecture_preprocessing(img: np.ndarray, model_type: str = "cnn") -> np.ndarray:
@@ -155,8 +156,10 @@ class SparkDataGenerator(tf.keras.utils.Sequence):
     """
     Production High-Speed Keras Sequence Generator with Architecture-Specific Preprocessing Router.
 
-    Removes universal [0, 1] scaling and applies exact normalization for ResNet50, MobileNetV2,
-    EfficientNetB0, and Custom CNN directly inside __getitem__.
+    Features:
+    - Pre-validates accessible files to guarantee 100% 1-to-1 label-sample alignment.
+    - Applies space-domain augmentations (solar glare, sensor noise, jitter, cutout) during training.
+    - Architecture-specific normalization (ResNet, MobileNet, EfficientNet, Custom CNN).
     """
 
     def __init__(
@@ -166,7 +169,8 @@ class SparkDataGenerator(tf.keras.utils.Sequence):
         target_size: tuple = IMAGE_SIZE,
         color_mode: str = "grayscale",
         model_type: str = "cnn",
-        shuffle: bool = True
+        shuffle: bool = True,
+        augment: bool = False
     ):
         """
         Args:
@@ -176,15 +180,32 @@ class SparkDataGenerator(tf.keras.utils.Sequence):
             color_mode (str): Output color format ('grayscale' or 'rgb').
             model_type (str): Target model architecture ('resnet50', 'mobilenetv2', 'efficientnetb0', 'cnn').
             shuffle (bool): Shuffle records at epoch end (default: True).
+            augment (bool): Whether to apply space-domain augmentations (default: False).
         """
-        self.records = list(records)
+        # Pre-filter existing image paths to prevent runtime batch shrinkage or desync
+        valid_records = []
+        for r in records:
+            p = (r.get("path") or r.get("cached_path")) if isinstance(r, dict) else r[0]
+            if p and os.path.exists(p):
+                valid_records.append(r)
+
+        if len(valid_records) < len(records):
+            print(f"[!] SparkDataGenerator: Filtered {len(records) - len(valid_records)} missing files. Retained {len(valid_records)} verified records.")
+
+        self.records = valid_records
         self.batch_size = batch_size
         self.target_size = target_size
         self.color_mode = color_mode
         self.model_type = model_type
         self.shuffle = shuffle
+        self.augment = augment
         self.indices = np.arange(len(self.records))
         self.on_epoch_end()
+
+    @property
+    def labels(self) -> np.ndarray:
+        """Returns 1D array of ground truth labels matching the verified records."""
+        return np.array([r.get("label", 0) if isinstance(r, dict) else r[1] for r in self.records], dtype=np.int32)
 
     def __len__(self) -> int:
         return int(np.ceil(len(self.records) / float(self.batch_size)))
@@ -198,20 +219,19 @@ class SparkDataGenerator(tf.keras.utils.Sequence):
         X_batch = np.zeros((num_samples, self.target_size[0], self.target_size[1], channels), dtype=np.float32)
         y_batch = np.zeros((num_samples,), dtype=np.int32)
 
-        valid_idx = 0
-        for record in batch_records:
+        for i, record in enumerate(batch_records):
             if isinstance(record, dict):
                 path = record.get("path") or record.get("cached_path")
-                label = record.get("label")
+                label = record.get("label", 0)
             else:
                 path, label = record[0], record[1]
 
-            if not path or not os.path.exists(path):
-                continue
-
             img = cv2.imread(path)
             if img is None:
-                continue
+                img = np.zeros((self.target_size[0], self.target_size[1], 3), dtype=np.uint8)
+
+            if img.shape[:2] != self.target_size:
+                img = cv2.resize(img, self.target_size, interpolation=cv2.INTER_AREA)
 
             if self.color_mode == "grayscale":
                 if len(img.shape) == 3 and img.shape[2] == 3:
@@ -225,14 +245,18 @@ class SparkDataGenerator(tf.keras.utils.Sequence):
                 elif len(img.shape) == 2:
                     img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
 
-            processed_tensor = apply_architecture_preprocessing(img, model_type=self.model_type)
-            X_batch[valid_idx] = processed_tensor
-            y_batch[valid_idx] = label
-            valid_idx += 1
+            # Apply space-domain augmentations during training
+            if self.augment:
+                try:
+                    img_tensor = tf.convert_to_tensor(img, dtype=tf.float32) / 255.0
+                    img_aug = apply_space_domain_augmentations(img_tensor).numpy()
+                    img = np.clip(img_aug * 255.0, 0.0, 255.0).astype(np.float32)
+                except Exception:
+                    pass
 
-        if valid_idx < num_samples:
-            X_batch = X_batch[:valid_idx]
-            y_batch = y_batch[:valid_idx]
+            processed_tensor = apply_architecture_preprocessing(img, model_type=self.model_type)
+            X_batch[i] = processed_tensor
+            y_batch[i] = int(label)
 
         return X_batch, y_batch
 

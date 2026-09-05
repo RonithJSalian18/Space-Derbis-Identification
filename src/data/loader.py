@@ -112,10 +112,20 @@ def split_dataset_by_trajectory(
     val_records = [temp_records[i] for i in val_idx]
     test_records = [temp_records[i] for i in test_idx]
 
+    train_groups = set(groups[i] for i in train_idx)
+    val_groups = set(temp_groups[i] for i in val_idx)
+    test_groups = set(temp_groups[i] for i in test_idx)
+
+    # Formal Leakage Assertions: Zero group intersection mathematically guaranteed
+    assert len(train_groups & val_groups) == 0, f"FATAL: Train/Val trajectory leakage detected! Shared: {train_groups & val_groups}"
+    assert len(train_groups & test_groups) == 0, f"FATAL: Train/Test trajectory leakage detected! Shared: {train_groups & test_groups}"
+    assert len(val_groups & test_groups) == 0, f"FATAL: Val/Test trajectory leakage detected! Shared: {val_groups & test_groups}"
+
     print(f"[+] Trajectory-Based Group Splitting Complete (70/15/15):")
-    print(f"   |-- Train Records: {len(train_records)} (Unique Trajectories: {len(set(groups[i] for i in train_idx))})")
-    print(f"   |-- Val Records:   {len(val_records)} (Unique Trajectories: {len(set(temp_groups[i] for i in val_idx))})")
-    print(f"   +-- Test Records:  {len(test_records)} (Unique Trajectories: {len(set(temp_groups[i] for i in test_idx))})")
+    print(f"   |-- Train Records: {len(train_records)} (Unique Trajectories: {len(train_groups)})")
+    print(f"   |-- Val Records:   {len(val_records)} (Unique Trajectories: {len(val_groups)})")
+    print(f"   +-- Test Records:  {len(test_records)} (Unique Trajectories: {len(test_groups)})")
+    print(f"[+] Verified ZERO Trajectory Overlap: Train ∩ Val = 0 | Train ∩ Test = 0 | Val ∩ Test = 0")
 
     return train_records, val_records, test_records
 

@@ -26,7 +26,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.data.loader import get_cleaned_dataset, split_dataset_by_trajectory
+from src.data.loader import get_cleaned_dataset, split_dataset_by_trajectory, extract_trajectory_id
 from src.data.preprocessing import crop_bbox_and_pad_square
 
 
@@ -91,7 +91,11 @@ def cache_records_subset(records: list, split_name: str, target_dir: str = "SPAR
 
             cached_rows.append({
                 "cached_path": rel_cached_path,
-                "label": label
+                "label": label,
+                "original_class": record.get("class_name", ""),
+                "trajectory_id": extract_trajectory_id(record),
+                "bbox": str(bbox) if bbox else "",
+                "source_path": path or ""
             })
     finally:
         for zh in zip_handles.values():
@@ -103,8 +107,16 @@ def cache_records_subset(records: list, split_name: str, target_dir: str = "SPAR
     elapsed = time.time() - start_time
 
     csv_manifest_path = os.path.join(labels_target_folder, f"cached_{split_name}.csv")
+    cleaned_manifest_path = os.path.join(labels_target_folder, f"cleaned_manifest_{split_name}.csv")
     df_cached = pd.DataFrame(cached_rows)
     df_cached.to_csv(csv_manifest_path, index=False)
+    df_cached.to_csv(cleaned_manifest_path, index=False)
+
+    # Also save to root cache directory for backward compatibility
+    root_cached_path = os.path.join(abs_target_dir, f"cached_{split_name}.csv")
+    root_cleaned_path = os.path.join(abs_target_dir, f"cleaned_manifest_{split_name}.csv")
+    df_cached.to_csv(root_cached_path, index=False)
+    df_cached.to_csv(root_cleaned_path, index=False)
 
     print(f"[+] Completed caching split '{split_name.upper()}' in {elapsed:.2f}s!")
     print(f"   |-- Images Saved:   {len(cached_rows)} -> {split_target_folder}")

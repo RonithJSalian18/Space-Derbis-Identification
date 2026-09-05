@@ -8,3 +8,4 @@ pillow
 imagehash
 tqdm
 pyyaml
+pytest

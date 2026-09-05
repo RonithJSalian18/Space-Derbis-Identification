@@ -19,12 +19,12 @@ CLASS_MAPPING = {
 }
 CLASS_NAMES = ["Debris", "Non-Debris"]
 
-# Default Hyperparameters
+# Default Hyperparameters (Synchronized with base_config.yaml)
 IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 32
 EPOCHS = 30
 LEARNING_RATE = 0.0001
-LABEL_SMOOTHING = 0.1
+LABEL_SMOOTHING = 0.05
 SEED = 42
 
 os.makedirs(SAVED_MODELS_DIR, exist_ok=True)
@@ -39,18 +39,23 @@ class AppConfig:
         "extract_dir": DATASET_EXTRACT_DIR,
         "image_size": (224, 224),
         "batch_size": 32,
-        "keep_duplicates": False,
+        "keep_duplicates": True,
         "class_mapping": CLASS_MAPPING,
         "class_names": CLASS_NAMES,
     })
     training: Dict[str, Any] = field(default_factory=lambda: {
         "epochs": 30,
+        "warmup_epochs": 5,
+        "lr_phase1": 0.0005,
+        "lr_phase2": 0.00002,
         "learning_rate": 0.0001,
         "optimizer": "adam",
         "loss": "binary_crossentropy",
-        "label_smoothing": 0.1,
+        "label_smoothing": 0.05,
         "use_class_weights": True,
         "clipnorm": 1.0,
+        "patience_early_stopping": 7,
+        "patience_reduce_lr": 3,
     })
     checkpoint: Dict[str, Any] = field(default_factory=lambda: {
         "saved_models_dir": SAVED_MODELS_DIR,
