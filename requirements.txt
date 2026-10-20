@@ -9,3 +9,6 @@ imagehash
 tqdm
 pyyaml
 pytest
+fastapi
+uvicorn[standard]
+python-multipart
