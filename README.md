@@ -3,6 +3,8 @@
 [![Python](https://img.shields.io/badge/Python-3.10-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.10--2.15-FF6F00.svg?style=flat&logo=tensorflow&logoColor=white)](https://www.tensorflow.org/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8.svg?style=flat&logo=opencv&logoColor=white)](https://opencv.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Inference%20API-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000.svg?style=flat&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Docker](https://img.shields.io/badge/Docker-GPU%20Ready-2496ED.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Tests](https://img.shields.io/badge/Tests-14%2F14%20Passing-success.svg?style=flat)](tests/)
 [![Hardware](https://img.shields.io/badge/Hardware-NVIDIA%20CUDA%20Accelerated-76B900.svg?style=flat&logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
@@ -16,6 +18,7 @@ Engineered with zero-I/O bottleneck cached streaming, Group-Based trajectory spl
 
 ## 📑 Table of Contents
 
+- [🧰 Tech Stack](#-tech-stack)
 - [🛰️ System Architecture & Workflow](#️-system-architecture--workflow)
 - [📌 Key Engineering Innovations & Technical Solutions](#-key-engineering-innovations--technical-solutions)
   - [1. Trajectory-Based Group Splitting (Zero-Leakage Guarantee)](#1-trajectory-based-group-splitting-zero-leakage-guarantee)
@@ -43,8 +46,25 @@ Engineered with zero-I/O bottleneck cached streaming, Group-Based trajectory spl
   - [Step 5: Production Inference (with 3-State Uncertainty Flagging)](#step-5-production-inference-with-3-state-uncertainty-flagging)
   - [Step 6: Zero-Trust Grad-CAM Visual Audit](#step-6-zero-trust-grad-cam-visual-audit)
   - [Step 7: Automated Scientific Test Suite](#step-7-automated-scientific-test-suite)
+- [🌐 Web Application (Next.js + FastAPI)](#-web-application-nextjs--fastapi)
 - [⚙️ Configuration Reference (`base_config.yaml`)](#️-configuration-reference-base_configyaml)
 - [📜 License & Acknowledgments](#-license--acknowledgments)
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **ML / Deep Learning** | Python 3.10, TensorFlow / Keras: a custom CNN trained from scratch, plus transfer learning from ImageNet-pretrained MobileNetV2, ResNet-50 and EfficientNet-B0 |
+| **Computer Vision** | OpenCV (cropping, reflection padding, Grad-CAM overlays), ImageHash (pHash deduplication) |
+| **Data & Evaluation** | scikit-learn (GroupShuffleSplit, PR curves), NumPy, Matplotlib, Seaborn, TensorBoard |
+| **Backend** | FastAPI, Uvicorn |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS, Recharts |
+| **Infrastructure** | NVIDIA CUDA (GPU training & inference), Docker |
+| **Testing** | pytest (14 tests) |
+
+> The models are trained on SPARK-2022 only. ImageNet is used solely as pretrained initialization for the three transfer-learning backbones.
 
 ---
 
@@ -168,7 +188,7 @@ flowchart TD
 
 ## 🧠 Supported Architectures & Verified Benchmark Results
 
-The framework integrates four distinct vision backbones instantiated through a centralized [`ModelFactory`](file:///D:/Space-VS/Space-Derbis-Identification/src/models/factory.py):
+The framework integrates four distinct vision backbones (a custom CNN trained from scratch, and three ImageNet-pretrained backbones fine-tuned on SPARK-2022), instantiated through a centralized [`ModelFactory`](file:///D:/Space-VS/Space-Derbis-Identification/src/models/factory.py):
 
 ### Architectural Specifications
 
@@ -200,6 +220,9 @@ EfficientNet-B0  4,219,300      16.36 MB      3.36 ms        0.1232          99.
 
 ```text
 Space-Debris-Identification/
+├── api/                                  # FastAPI inference server for the web frontend
+│   └── server.py                         # /api/predict, /api/models, /api/samples, /api/health
+├── frontend/                             # Next.js 16 web application (see frontend/README.md)
 ├── configs/                              # Central Hyperparameter Configuration
 │   ├── __init__.py                       # Package exports & constants
 │   ├── base_config.yaml                  # Experiment hyperparameters (data, training, models)
@@ -502,6 +525,45 @@ pytest tests/ -v
   - `test_pointing_game_hit_and_miss`: Tests Pointing Game peak coordinate hit/miss inside ground-truth bounding boxes.
   - `test_cam_energy_inside_bbox`: Measures activation energy percentage inside bounding boxes.
   - `test_cam_bbox_iou`: Tests Intersection-over-Union between activation masks and target bounding boxes.
+
+---
+
+## 🌐 Web Application (Next.js + FastAPI)
+
+An interactive web console for classifying imagery with any of the four architectures. It shows the calibrated 3-state verdict, class probabilities, a decision-zone visualization, Grad-CAM attention maps, and a cross-model consensus table.
+
+| Page | What it does |
+| :--- | :--- |
+| `/` | Project overview: pipeline, the four architectures and the 3-state decision policy |
+| `/classify` | Pick a model, upload an image or choose a SPARK-2022 sample, and get the verdict, probabilities, decision zone and Grad-CAM. **Compare all models** runs all four on the same image |
+| `/models` | Benchmark table and interactive charts: error rates, latency vs. model size, checkpoint footprint |
+
+The frontend lives in [`frontend/`](frontend/) (Next.js, TypeScript, Tailwind CSS, Recharts) and calls the FastAPI server in [`api/server.py`](api/server.py), which wraps the existing `DebrisPredictor` and Grad-CAM code.
+
+**1. Start the inference API** (from the repository root, inside the Python environment):
+
+```bash
+python -m uvicorn api.server:app --port 8000
+```
+
+Models load lazily on their first request and stay cached in memory. To allow a different frontend origin, set `FRONTEND_ORIGIN` (comma-separated).
+
+**2. Start the frontend:**
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:3000
+```
+
+Set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` if the API is not on `http://localhost:8000`.
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/health` | GET | Server status, loaded models, GPU availability |
+| `/api/models` | GET | Benchmark metrics and weight availability for each architecture |
+| `/api/samples` | GET | Sample images from `sample_debris/` and `sample_non_debris/` (served under `/samples/...`) |
+| `/api/predict` | POST | Multipart `file`, `model` (`cnn`/`mobilenet`/`efficientnet`/`resnet`), `threshold`, `allow_uncertain`, `gradcam`. Returns the `DebrisPredictor` result plus `inference_ms` and base64 Grad-CAM frames |
 
 ---
 
