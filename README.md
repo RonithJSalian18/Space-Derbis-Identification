@@ -249,8 +249,8 @@ Space-Debris-Identification/
 │   ├── mobilenet_spark_debris.h5         # MobileNetV2 model weights (9.49 MB)
 │   ├── efficientnet_spark_debris.h5      # EfficientNetB0 model weights (16.36 MB)
 │   └── resnet_spark_debris.h5            # ResNet50 model weights (91.25 MB)
-├── sample_debris/                        # Verified sample debris images for rapid testing (10 images)
-├── sample_non_debris/                    # Verified sample spacecraft images (10 images)
+├── sample_debris/                        # Sample debris crops for rapid testing (10 reflection-padded 224x224 images)
+├── sample_non_debris/                    # Sample spacecraft crops (10 reflection-padded 224x224 images)
 ├── scripts/                              # Offline Preprocessing & Analytical Engines
 │   ├── cache_dataset.py                  # Offline bounding box cropper, reflection padder & auto pHash
 │   ├── deduplicate_cache.py              # Multi-core parallel pHash perceptual deduplicator
@@ -451,9 +451,9 @@ python predict.py \
 File Path:        sample_debris/img022768.jpg
 Prediction:       Debris
 Status:           CONFIDENT SPACE DEBRIS
-Confidence:       100.0%
-P(Debris):        1.0
-P(Non-Debris):    0.0
+Confidence:       84.34%
+P(Debris):        0.8434
+P(Non-Debris):    0.1566
 Threshold:        0.5
 ==================================================
 ```
@@ -465,9 +465,9 @@ Threshold:        0.5
 File Path:        sample_non_debris/img080704.jpg
 Prediction:       Non-Debris
 Status:           CONFIDENT NON-DEBRIS SPACECRAFT
-Confidence:       98.24%
-P(Debris):        0.0176
-P(Non-Debris):    0.9824
+Confidence:       98.4%
+P(Debris):        0.016
+P(Non-Debris):    0.984
 Threshold:        0.5
 ==================================================
 ```
